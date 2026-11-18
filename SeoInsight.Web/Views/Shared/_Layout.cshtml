@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>@ViewData["Title"] – SeoInsight Rankline</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"><path d="M5 19V13M12 19V8M19 19V4"/></svg></span>SeoInsight</div>
+    <nav class="nav" id="nav"></nav>
+    <div class="side-foot">
+      <span id="storeStatus"><span class="dot"></span>Connecting storage…</span>
+      <span id="engineStatus"><span class="dot"></span>Checking AI engine…</span>
+      <button class="btn ghost sm" id="themeBtn" style="justify-content:flex-start;padding-left:0">Switch theme</button>
+    </div>
+  </aside>
+  <div class="mobile-top">
+    <div class="brand" style="padding:0"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"><path d="M5 19V13M12 19V8M19 19V4"/></svg></span></div>
+    <nav class="nav" id="navM"></nav>
+  </div>
+  <main class="main" id="view">
+      @RenderBody()
+  </main>
+</div>
+
+@RenderSection("Modals", required: false)
+
+<div class="toast" id="toast"></div>
+
+@RenderSection("Scripts", required: false)
+</body>
+</html>

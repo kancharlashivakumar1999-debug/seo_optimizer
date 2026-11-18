@@ -1,0 +1,20 @@
+@model SeoInsight.Web.ViewModels.ErrorViewModel
+@{
+    ViewData["Title"] = "Error";
+}
+
+<div class="panel" style="max-width: 600px; margin: 40px auto; text-align: center;">
+    <h2 style="color: var(--down);">An error occurred</h2>
+    <p class="sub">Something unexpected happened while processing your request.</p>
+
+    @if (Model.ShowRequestId)
+    {
+        <p style="font-size: 13px; color: var(--ink-3);">
+            <strong>Correlation / Request ID:</strong> <code>@Model.RequestId</code>
+        </p>
+    }
+
+    <div style="margin-top: 24px;">
+        <a href="/" class="btn primary">Back to Dashboard</a>
+    </div>
+</div>

@@ -1,0 +1,22 @@
+## Visual Studio / VS Code
+.vs/
+.vscode/
+
+## Build and Artifacts
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## Logs
+Logs/
+*.log
+
+## App Data persistence (local test caches)
+SeoInsight.Web/App_Data/
+
+## OS Files
+.DS_Store
+Thumbs.db

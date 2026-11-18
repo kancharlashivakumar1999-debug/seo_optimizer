@@ -1,0 +1,510 @@
+@{
+    ViewData["Title"] = "SEO Rankline Dashboard";
+}
+
+<!-- SPA View Mount Container -->
+<div id="dynamicContainer"></div>
+
+@section Modals {
+<!-- Task modal: Fixed size, scrollable body, with close icon -->
+<div class="scrim" id="taskModal" role="dialog" aria-modal="true" aria-labelledby="tmTitle">
+  <div class="modal">
+    <div class="modal-h">
+      <h3 id="tmTitle">New ranking task</h3>
+      <button class="modal-close-btn" data-close aria-label="Close">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-b">
+      <div class="row2">
+        <div class="field">
+          <label for="fName">Task name</label>
+          <input id="fName" placeholder="e.g. Hyderabad dental clinic – local">
+        </div>
+        <div class="field">
+          <label for="fSite">Website to track</label>
+          <input id="fSite" placeholder="example.com">
+        </div>
+      </div>
+      <div class="field">
+        <label>Keywords</label>
+        <div class="tag-input" id="kwBox"><input id="kwIn" placeholder="Type keyword and press Enter"></div>
+        <span class="hint">Each keyword is checked in every location.</span>
+      </div>
+      <div class="field">
+        <label>Locations</label>
+        <div class="tag-input" id="locBox"><input id="locIn" placeholder="e.g. Hyderabad, India – press Enter"></div>
+      </div>
+      <div class="field">
+        <label for="fPrompt">Prompt used to check rank</label>
+        <textarea id="fPrompt"></textarea>
+        <div class="placeholder-btns">
+          <span class="hint">Insert:</span>
+          <button type="button" data-ph="{keyword}">{keyword}</button>
+          <button type="button" data-ph="{location}">{location}</button>
+          <button type="button" data-ph="{website}">{website}</button>
+        </div>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>Check engine</label>
+          <div class="seg" id="engSeg"><button type="button" data-v="ai" class="on">Live SERP + RAG</button></div>
+          <span class="hint" id="engHint">Live queries SERP provider, cleans competitor pages, and chunks into vector store.</span>
+        </div>
+        <div class="field">
+          <label for="fRepeats">Checks per run</label>
+          <select id="fRepeats"><option value="1" selected>1 – single check</option><option value="3">3 – average of 3</option></select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-f">
+      <button class="btn" data-close>Cancel</button>
+      <button class="btn primary" id="saveTask">Create task</button>
+    </div>
+  </div>
+</div>
+
+<!-- Run modal: Fixed size, scrollable body, with close icon -->
+<div class="scrim" id="runModal" role="dialog" aria-modal="true" aria-labelledby="rmTitle">
+  <div class="modal">
+    <div class="modal-h">
+      <h3 id="rmTitle">Run task</h3>
+      <button class="modal-close-btn" data-close aria-label="Close">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-b">
+      <div class="field" id="implField" hidden>
+        <label>Which AI improvements did you implement?</label>
+        <div class="impl-list" id="implList"></div>
+      </div>
+      <div class="field">
+        <label for="fNote">Notes for this run</label>
+        <textarea id="fNote" placeholder="e.g. Rewrote service page titles, added FAQ schema, published new pages"></textarea>
+      </div>
+      <div id="runProg" hidden>
+        <div class="progress"><i id="runBar"></i></div>
+        <div class="run-status" id="runText"></div>
+      </div>
+      <div id="ragInspectBox" style="display:none;background:var(--surface-2);border-radius:var(--radius);padding:12px;font-size:13px;">
+        <strong>Generated RAG Input Ready:</strong>
+        <div id="ragInspectSummary" style="margin-top:6px;max-height:140px;overflow:auto;font-family:monospace;"></div>
+      </div>
+    </div>
+    <div class="modal-f">
+      <button class="btn" data-close id="runCancel">Cancel</button>
+      <button class="btn primary" id="runGo">Start run now</button>
+    </div>
+  </div>
+</div>
+}
+
+@section Scripts {
+<script>
+/* ---------- helpers ---------- */
+const $=(s,r=document)=>r.querySelector(s);
+const $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
+const fmtDate=t=>new Date(t).toLocaleDateString(undefined,{day:"numeric",month:"short",year:"numeric"});
+const fmtDT=t=>new Date(t).toLocaleString(undefined,{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});
+const NF=101;
+const clip=(s,n)=>{s=String(s||"").trim();return s.length>n?s.slice(0,n-1)+"…":s};
+const normDomain=s=>String(s||"").toLowerCase().replace(/^https?:\/\//,"").replace(/^www\./,"").split(/[\/?#\s]/)[0].trim();
+const DEFAULT_PROMPT="Analyze SERP ranking for {keyword} in {location} for website {website}. Identify top competitors, extract key topics and recommend content optimizations.";
+
+function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove("show"),2600)}
+const icons={
+  dash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>',
+  tasks:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1.2 1.2L7 5M3.5 12l1.2 1.2L7 11M3.5 18l1.2 1.2L7 17"/></svg>',
+  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  play:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z"/></svg>',
+  arrow:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+  search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
+  doc:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>'
+};
+
+/* ---------- state & local storage (RAM + Local Storage) ---------- */
+let tasks=[];
+const LS_KEY="seoinsight-tasks-live";
+function lsLoad(){try{const r=localStorage.getItem(LS_KEY);return r?JSON.parse(r):[]}catch(e){return[]}}
+function lsSave(){try{localStorage.setItem(LS_KEY,JSON.stringify(tasks))}catch(e){}}
+
+function saveTask(t){
+  const idx=tasks.findIndex(x=>x.id===t.id);
+  if(idx>=0) tasks[idx]=t; else tasks.unshift(t);
+  lsSave();
+}
+function saveRun(t,r){
+  if(!t.runs) t.runs=[];
+  t.runs.push(r);
+  lsSave();
+}
+function removeTask(id){
+  tasks=tasks.filter(x=>x.id!==id);
+  lsSave();
+}
+function setStatus(){
+  $("#storeStatus").innerHTML='<span class="dot ok"></span>RAM / Local Storage';
+  $("#engineStatus").innerHTML='<span class="dot ok"></span>SERP API + Vector Ready';
+}
+
+/* ---------- metrics ---------- */
+const runAvg=r=>{const v=(r.results||[]).map(x=>x.rank??NF);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null};
+const foundAvg=r=>{if(!r)return null;const v=(r.results||[]).filter(x=>x.rank!=null).map(x=>x.rank);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null};
+const lastRun=t=>t.runs&&t.runs.length?t.runs[t.runs.length-1]:null;
+const prevRun=t=>t.runs&&t.runs.length>1?t.runs[t.runs.length-2]:null;
+const fmtRank=r=>r==null?"–":(Math.round(r*10)/10).toString();
+function rankBadge(r){if(r==null)return'<span class="rank nf">Not found</span>';const n=Math.round(r);return`<span class="rank ${n<=3?"t3":n<=10?"t10":""}">${fmtRank(r)}</span>`}
+function deltaPill(prev,cur){
+  if(prev==null&&cur==null)return'<span class="pill flat">–</span>';
+  if(prev==null)return'<span class="pill up">New</span>';
+  if(cur==null)return'<span class="pill down">Lost</span>';
+  const d=Math.round((prev-cur)*10)/10;
+  if(Math.abs(d)<0.05)return'<span class="pill flat">0</span>';
+  return d>0?`<span class="pill up">▲ ${d}</span>`:`<span class="pill down">▼ ${Math.abs(d)}</span>`;
+}
+function pairs(t){const out=[];(t.keywords||[]).forEach(k=>(t.locations||[]).forEach(l=>out.push({keyword:k,location:l})));return out}
+function resultFor(run,k,l){return run?(run.results||[]).find(x=>x.keyword===k&&x.location===l):null}
+function globalStats(){
+  let kw=0,runs=0,top3=0,top10=0,up=0,down=0,sum=0,cnt=0,openRecs=0;
+  tasks.forEach(t=>{
+    kw+=pairs(t).length;runs+=(t.runs||[]).length;
+    const L=lastRun(t),P=prevRun(t);if(!L)return;
+    (L.results||[]).forEach(r=>{
+      if(r.rank!=null){sum+=r.rank;cnt++;if(r.rank<=3.5)top3++;if(r.rank<=10.5)top10++}
+      const p=P?resultFor(P,r.keyword,r.location):null;
+      if(p){const a=p.rank??NF,b=r.rank??NF;if(b<a-0.05)up++;else if(b>a+0.05)down++}
+    });
+  });
+  return{kw,runs,top3,top10,up,down,openRecs,avg:cnt?sum/cnt:null};
+}
+
+/* ---------- Execute Live SERP API + Prepare RAG Input ---------- */
+async function executeLiveRun(t,note,implemented){
+  const bar=$("#runBar"),txt=$("#runText");
+  $("#runProg").hidden=false;
+  txt.textContent="Calling SERP API for "+t.keywords.length+" keyword(s)...";
+  bar.style.width="30%";
+
+  try {
+    const response = await fetch("/Dashboard/RunSerpAnalysis", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        taskName: t.name,
+        website: t.website,
+        keywords: t.keywords,
+        locations: t.locations,
+        note: note,
+        implemented: implemented
+      })
+    });
+
+    if(!response.ok) {
+      throw new Error("HTTP error " + response.status);
+    }
+
+    bar.style.width="70%";
+    txt.textContent="Scraping competitor pages & storing chunks in Vector RAM...";
+
+    const data = await response.json();
+    bar.style.width="100%";
+    txt.textContent="SERP results & RAG inputs prepared successfully!";
+
+    // Store RAG Inputs locally in RAM/localStorage
+    const ragInputsKey = "rag_input_" + data.report.id;
+    localStorage.setItem(ragInputsKey, JSON.stringify(data.ragInputs));
+
+    // Show preview of RAG Input
+    $("#ragInspectBox").style.display="block";
+    $("#ragInspectSummary").innerHTML=esc(JSON.stringify(data.ragInputs[0], null, 2));
+
+    const run={
+      id: data.report.id,
+      at: Date.now(),
+      note: note.trim(),
+      implemented: implemented,
+      engine: "live-serp",
+      repeats: 1,
+      results: (data.report.keywordResults||[]).map(kr=>({
+        keyword: kr.keyword,
+        location: kr.location,
+        rank: kr.rank,
+        samples: [kr.rank],
+        hits: kr.hits,
+        top10: (kr.top10||[]).map(item=>({
+          rank: item.position,
+          name: item.title,
+          domain: item.domain,
+          why: item.isOwnDomain ? "Your tracked site" : "Organic ranking competitor",
+          isMe: item.isOwnDomain
+        }))
+      })),
+      report: {
+        source: "serp-live",
+        at: Date.now(),
+        score: data.report.visibilityScore,
+        summary: data.report.summary,
+        changeImpact: "Live SERP data fetched and vectorized. RAG input created.",
+        wins: data.report.keywordResults.filter(r=>r.rank && r.rank<=3).map(r=>"Top 3 rank achieved for "+r.keyword),
+        issues: data.report.keywordResults.filter(r=>!r.rank || r.rank>10).map(r=>"Outside top 10 for "+r.keyword),
+        patterns: ["Competitors have dedicated keyword URLs and extensive schema."],
+        competitors: (data.report.keywordResults[0]?.top10||[]).slice(0,4).map(c=>({ domain: c.domain, name: c.title, whyTop: c.snippet })),
+        recommendations: []
+      },
+      ragInputId: ragInputsKey
+    };
+
+    return run;
+  } catch(err) {
+    txt.textContent="Failed to run: " + err.message;
+    return null;
+  }
+}
+
+/* ---------- routing & nav ---------- */
+let charts=[];
+function killCharts(){charts.forEach(c=>c.destroy());charts=[]}
+function navHTML(active){return`<a href="#dashboard" class="${active==="dashboard"?"on":""}">${icons.dash}<span>Dashboard</span></a><a href="#tasks" class="${active!=="dashboard"?"on":""}">${icons.tasks}<span>Tasks</span></a>`}
+let detailTab="overview";
+
+function route(){
+  killCharts();
+  const h=location.hash.slice(1)||"dashboard";
+  const deep=h.startsWith("task-")||h.startsWith("report-");
+  $("#nav").innerHTML=navHTML(deep?"tasks":h);$("#navM").innerHTML=navHTML(deep?"tasks":h);
+
+  if(h.startsWith("report-")){
+    const m=h.match(/^report-([a-z0-9]+)-(\d+)$/);
+    const t=m&&tasks.find(x=>x.id===m[1]);
+    const i=m?+m[2]-1:-1;
+    if(t&&t.runs[i]){window.scrollTo(0,0);return renderReport(t,i)}
+    location.hash="tasks";return;
+  }
+  if(h.startsWith("task-")){
+    const t=tasks.find(x=>"task-"+x.id===h);
+    if(t)return renderDetail(t);
+    location.hash="tasks";return;
+  }
+  if(h==="tasks")return renderTasks();
+  renderDashboard();
+}
+window.addEventListener("hashchange",()=>{if(!location.hash.startsWith("#task-"))detailTab="overview";route()});
+const reportHash=(t,i)=>`report-${t.id}-${i+1}`;
+
+/* ---------- chart theming ---------- */
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const PALETTE=()=>[css("--accent"),css("--up"),css("--gold"),css("--down"),"#8B5CF6","#0EA5B7","#D9468F","#64748B"];
+function baseOpts(rankAxis=true){
+  const grid=css("--line"),tick=css("--ink-3");
+  return{responsive:true,maintainAspectRatio:false,interaction:{mode:"index",intersect:false},
+    plugins:{legend:{labels:{color:css("--ink-2"),boxWidth:10,boxHeight:10,usePointStyle:true,font:{family:"Schibsted Grotesk"}}}},
+    scales:{x:{grid:{display:false},ticks:{color:tick,font:{family:"Schibsted Grotesk"}}},
+      y:{reverse:rankAxis,min:rankAxis?1:undefined,grid:{color:grid},ticks:{color:tick,precision:0,font:{family:"Schibsted Grotesk"},callback:rankAxis?(v=>"#"+v):undefined}}}};
+}
+function mkChart(el,cfg){if(!window.Chart||!el)return;charts.push(new Chart(el,cfg))}
+
+function emptyState(){
+  return`<div class="panel empty"><h2>No ranking tasks found</h2><p>Click "New task" to configure your website, keywords and location. Clicking "Run now" will query the live SERP API and chunk data into vector storage.</p>
+  <div class="acts"><button class="btn primary" data-new>${icons.plus}New task</button></div></div>`;
+}
+
+/* ---------- Dashboard ---------- */
+function renderDashboard(){
+  const v=$("#dynamicContainer");const s=globalStats();
+  v.innerHTML=`<div class="head"><div><h1>Dashboard</h1><p>${tasks.length?`${tasks.length} task${tasks.length>1?"s":""} tracking ${s.kw} keyword–location pairs`:"No tasks configured"}</p></div>
+    <button class="btn primary" data-new>${icons.plus}New task</button></div>
+  ${tasks.length?`
+  <div class="kpis">
+    <div class="kpi"><div class="v">${fmtRank(s.avg)}</div><div class="l">Average rank (found)</div></div>
+    <div class="kpi"><div class="v">${s.top10}</div><div class="l">In top 10</div></div>
+    <div class="kpi"><div class="v" style="color:var(--up)">${s.up}</div><div class="l">Improved last run</div></div>
+    <div class="kpi"><div class="v" style="color:var(--down)">${s.down}</div><div class="l">Dropped last run</div></div>
+    <div class="kpi"><div class="v">${s.runs}</div><div class="l">Runs completed</div></div>
+    <div class="kpi"><div class="v">${s.kw}</div><div class="l">Keywords Tracked</div></div>
+  </div>
+  <div class="grid g-2-1" style="margin-bottom:18px">
+    <div class="panel"><h2>Average rank by run</h2><p class="sub">Line per task</p><div class="chart-box"><canvas id="cTrend"></canvas></div></div>
+    <div class="panel"><h2>Biggest moves</h2><p class="sub">Latest run vs previous</p><div class="ladder" id="movers"></div></div>
+  </div>
+  <div class="panel"><h2>Recent run reports</h2><p class="sub">Click a row to open report &amp; RAG input</p><div class="tbl-wrap"><table><thead><tr><th>Task</th><th>When</th><th class="num">Score</th><th class="num">Avg rank</th><th class="num">Status</th></tr></thead><tbody id="recent"></tbody></table></div></div>
+  `:emptyState()}`;
+
+  if(!tasks.length)return;
+  const maxRuns=Math.max(...tasks.map(t=>(t.runs||[]).length),1);const pal=PALETTE();
+  mkChart($("#cTrend"),{type:"line",data:{labels:Array.from({length:maxRuns},(_,i)=>"Run "+(i+1)),
+    datasets:tasks.filter(t=>t.runs&&t.runs.length).slice(0,8).map((t,i)=>({label:t.name,data:t.runs.map(r=>Math.round(runAvg(r)*10)/10),borderColor:pal[i%pal.length],tension:.3,borderWidth:2.5,pointRadius:3}))},options:baseOpts(true)});
+
+  const rec=[];tasks.forEach(t=>(t.runs||[]).forEach((r,i)=>rec.push({t,r,i})));
+  rec.sort((a,b)=>b.r.at-a.r.at);
+  $("#recent").innerHTML=rec.slice(0,7).map(x=>`<tr class="click" data-href="${reportHash(x.t,x.i)}"><td><b>${esc(x.t.name)}</b> <span class="muted">Run ${x.i+1}</span></td><td class="muted">${fmtDT(x.r.at)}</td><td class="num">${x.r.report?x.r.report.score:"–"}</td><td class="num">${fmtRank(runAvg(x.r))}</td><td class="num"><span class="pill up">RAG Ready</span></td></tr>`).join("")||'<tr><td colspan="5" class="muted">No runs completed yet – open a task and click Run.</td></tr>';
+}
+
+/* ---------- Tasks list ---------- */
+function renderTasks(){
+  const v=$("#dynamicContainer");
+  v.innerHTML=`<div class="head"><div><h1>Ranking tasks</h1><p>Configured domains and target keywords.</p></div><button class="btn primary" data-new>${icons.plus}New task</button></div>
+  ${tasks.length?`
+  <div class="panel list-panel">
+    <div class="task-row head-row"><span>Task</span><span class="c-loc">Locations</span><span class="c-kw">Keywords</span><span class="c-last">Latest Rank</span><span></span></div>
+    ${tasks.map(t=>{const L=lastRun(t);return`<div class="task-row" data-go="${t.id}">
+      <div style="min-width:0"><div class="t-name">${esc(t.name)}</div><div class="t-site">${esc(t.website)} – ${(t.runs||[]).length} run(s)</div></div>
+      <div class="c-loc chips">${(t.locations||[]).map(l=>`<span class="chip">${esc(l)}</span>`).join("")}</div>
+      <div class="c-kw">${(t.keywords||[]).length}</div>
+      <div class="c-last"><span class="big-rank">${L?fmtRank(runAvg(L)):"–"}</span></div>
+      <div><button class="btn sm primary" data-run="${t.id}">${icons.play}Run now</button></div>
+    </div>`}).join("")}
+  </div>`:emptyState()}`;
+}
+
+/* ---------- Task detail ---------- */
+function renderDetail(t){
+  const v=$("#dynamicContainer");const L=lastRun(t);
+  v.innerHTML=`<div class="crumb"><a href="#tasks">Tasks</a> / ${esc(t.name)}</div>
+  <div class="head"><div><h1>${esc(t.name)}</h1>
+    <div class="meta-row"><span>Website: <b>${esc(t.website)}</b></span><span>Keywords: <b>${(t.keywords||[]).join(", ")}</b></span><span>Locations: <b>${(t.locations||[]).join(", ")}</b></span></div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn danger" data-del="${t.id}">Delete</button><button class="btn primary" data-run="${t.id}">${icons.play}Run now</button></div></div>
+  ${L?`<div class="panel" style="margin-bottom:18px"><h2>Latest Run Results (Live SERP)</h2>
+    <div class="tbl-wrap"><table><thead><tr><th>Keyword</th><th>Location</th><th class="num">Rank</th><th>Status</th></tr></thead><tbody>
+    ${(L.results||[]).map(r=>`<tr><td><b>${esc(r.keyword)}</b></td><td>${esc(r.location)}</td><td class="num">${rankBadge(r.rank)}</td><td>${r.rank?"Found in SERP":"Not in Top 10"}</td></tr>`).join("")}
+    </tbody></table></div></div>`:emptyState()}`;
+}
+
+/* ---------- Report Page (with RAG Input Display) ---------- */
+function renderReport(t,i){
+  const run=t.runs[i];const v=$("#dynamicContainer");
+  const ragDataStr=localStorage.getItem("rag_input_" + run.id);
+  let ragData = null;
+  try { if(ragDataStr) ragData = JSON.parse(ragDataStr); } catch(e){}
+
+  v.innerHTML=`<div class="crumb"><a href="#tasks">Tasks</a> / <a href="#task-${t.id}">${esc(t.name)}</a> / Run ${i+1} Report</div>
+  <div class="head"><div><h1>Live SERP Run ${i+1} &amp; RAG Input</h1>
+    <div class="meta-row"><span>Tracked Site: <b>${esc(t.website)}</b></span><span>Executed: ${fmtDT(run.at)}</span></div></div>
+    <div><button class="btn primary" data-run="${t.id}">${icons.play}Run Again</button></div></div>
+
+  <div class="panel" style="margin-bottom:18px">
+    <h2>SERP Organic Results</h2>
+    <div class="tbl-wrap"><table><thead><tr><th>Keyword</th><th>Location</th><th class="num">Position</th><th>Top 1 Result</th></tr></thead><tbody>
+    ${(run.results||[]).map(r=>`<tr><td><b>${esc(r.keyword)}</b></td><td>${esc(r.location)}</td><td class="num">${rankBadge(r.rank)}</td><td class="muted">${esc(r.top10?.[0]?.name||"–")}</td></tr>`).join("")}
+    </tbody></table></div>
+  </div>
+
+  <div class="panel" style="margin-bottom:18px">
+    <h2>Prepared RAG Input (Stored in RAM / LocalStorage)</h2>
+    <p class="sub">Structured context extracted from SERP and competitor scraping ready for Azure OpenAI prompt generation.</p>
+    <div style="background:var(--surface-2);border-radius:var(--radius);padding:14px;overflow:auto;max-height:380px;">
+      <pre style="margin:0;font-family:monospace;font-size:12.5px;white-space:pre-wrap;">${esc(JSON.stringify(ragData, null, 2))}</pre>
+    </div>
+  </div>`;
+}
+
+/* ---------- task modal ---------- */
+let editId=null,kwTags=[],locTags=[];
+function drawTags(box,arr,input){
+  $$(".chip",box).forEach(c=>c.remove());
+  arr.forEach((tg,i)=>{
+    const c=document.createElement("span");
+    c.className="chip";
+    c.innerHTML=`${esc(tg)}<button type="button" aria-label="Remove ${esc(tg)}">×</button>`;
+    c.querySelector("button").onclick=()=>{arr.splice(i,1);drawTags(box,arr,input)};
+    box.insertBefore(c,input);
+  });
+}
+function bindTags(box,input,getArr){
+  box.onclick=()=>input.focus();
+  const add=val=>{val.split(/[\n,;]+/).map(s=>s.trim()).filter(Boolean).forEach(s=>{const a=getArr();if(!a.includes(s))a.push(s)});input.value="";drawTags(box,getArr(),input)};
+  input.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();add(input.value)}else if(e.key==="Backspace"&&!input.value&&getArr().length){getArr().pop();drawTags(box,getArr(),input)}};
+  input.onblur=()=>{if(input.value.trim())add(input.value)};
+}
+bindTags($("#kwBox"),$("#kwIn"),()=>kwTags);
+bindTags($("#locBox"),$("#locIn"),()=>locTags);
+
+function openTaskModal(t){
+  editId=t?t.id:null;
+  $("#tmTitle").textContent=t?"Edit ranking task":"New ranking task";
+  $("#fName").value=t?.name||"";
+  $("#fSite").value=t?.website||"";
+  $("#fPrompt").value=t?.prompt||DEFAULT_PROMPT;
+  kwTags=[...(t?.keywords||[])];
+  locTags=[...(t?.locations||[])];
+  drawTags($("#kwBox"),kwTags,$("#kwIn"));
+  drawTags($("#locBox"),locTags,$("#locIn"));
+  $("#taskModal").classList.add("open");
+  setTimeout(()=>$("#fName").focus(),30);
+}
+
+$("#saveTask").onclick=async()=>{
+  if($("#kwIn").value.trim()){kwTags.push(...$("#kwIn").value.split(/[\n,;]+/).map(s=>s.trim()).filter(Boolean));$("#kwIn").value=""}
+  if($("#locIn").value.trim()){locTags.push(...$("#locIn").value.split(/[\n;]+/).map(s=>s.trim()).filter(Boolean));$("#locIn").value=""}
+  const name=$("#fName").value.trim(),site=normDomain($("#fSite").value),prompt=$("#fPrompt").value.trim();
+  if(!site){toast("Add website to track");return $("#fSite").focus()}
+  if(!kwTags.length){toast("Add at least one keyword");return $("#kwIn").focus()}
+  if(!locTags.length){toast("Add at least one location");return $("#locIn").focus()}
+
+  const t={
+    id: editId || uid(),
+    name: name || site,
+    website: site,
+    keywords: [...new Set(kwTags)],
+    locations: [...new Set(locTags)],
+    prompt: prompt,
+    runs: []
+  };
+
+  saveTask(t);
+  closeModals();
+  toast("Task created successfully");
+  location.hash="task-"+t.id;
+  route();
+};
+
+/* ---------- run modal ---------- */
+let runTaskId=null;
+function openRunModal(id){
+  const t=tasks.find(x=>x.id===id);if(!t)return;runTaskId=id;
+  $("#rmTitle").textContent="Run live SERP: “"+t.name+"”";
+  $("#fNote").value="";
+  $("#runProg").hidden=true;
+  $("#ragInspectBox").style.display="none";
+  $("#runBar").style.width="0";
+  $("#runGo").disabled=false;
+  $("#runModal").classList.add("open");
+}
+
+$("#runGo").onclick=async()=>{
+  const t=tasks.find(x=>x.id===runTaskId);if(!t)return;
+  $("#runGo").disabled=true;
+  const run = await executeLiveRun(t, $("#fNote").value, []);
+  if(run) {
+    saveRun(t, run);
+    toast("Live SERP queried and RAG Input generated!");
+    setTimeout(()=>{
+      closeModals();
+      location.hash=reportHash(t, t.runs.length-1);
+    }, 1500);
+  } else {
+    $("#runGo").disabled=false;
+  }
+};
+
+function closeModals(){$$(".scrim").forEach(m=>m.classList.remove("open"));route()}
+$$("[data-close]").forEach(b=>b.onclick=closeModals);
+$$(".scrim").forEach(s=>s.addEventListener("mousedown",e=>{if(e.target===s)closeModals()}));
+
+/* ---------- Global clicks ---------- */
+document.addEventListener("click",e=>{
+  if(e.target.closest("[data-new]")){openTaskModal();return}
+  const r=e.target.closest("[data-run]");if(r){e.stopPropagation();openRunModal(r.dataset.run);return}
+  const d=e.target.closest("[data-del]");if(d){const t=tasks.find(x=>x.id===d.dataset.del);if(t&&confirm(`Delete “${t.name}”?`)){removeTask(t.id);location.hash="tasks";toast("Task deleted")}return}
+  const hr=e.target.closest("[data-href]");if(hr){location.hash=hr.dataset.href;return}
+  const g=e.target.closest("[data-go]");if(g){location.hash="task-"+g.dataset.go}
+});
+
+$("#themeBtn").onclick=()=>{const rt=document.documentElement;const dark=rt.dataset.theme?rt.dataset.theme==="dark":matchMedia("(prefers-color-scheme: dark)").matches;rt.dataset.theme=dark?"light":"dark";route()};
+
+tasks=lsLoad();
+setStatus();
+route();
+</script>
+}

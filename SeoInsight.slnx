@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="SeoInsight.Tests/SeoInsight.Tests.csproj" />
+  <Project Path="SeoInsight.Web/SeoInsight.Web.csproj" />
+</Solution>
