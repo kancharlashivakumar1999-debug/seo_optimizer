@@ -693,7 +693,7 @@ $("#runGo").onclick=async()=>{
 
 function closeModals(){$$(".scrim").forEach(m=>m.classList.remove("open"));}
 $$("[data-close]").forEach(b=>b.onclick=closeModals);
-$$(".scrim").forEach(s=>s.addEventListener("mousedown",e=>{if(e.target===s)closeModals()}));
+// Prevent backdrop click from dismissing the modal dialog (close only on completion or close icon/cancel button)
 
 /* ---------- Global clicks ---------- */
 document.addEventListener("click",e=>{
