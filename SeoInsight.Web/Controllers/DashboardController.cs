@@ -14,6 +14,7 @@ public class DashboardController : Controller
     private readonly IChunkingService _chunkingService;
     private readonly IVectorStore _vectorStore;
     private readonly ITaskRepository _taskRepository;
+    private readonly IRagAnalysisService _ragAnalysisService;
     private readonly ILogger<DashboardController> _logger;
 
     public DashboardController(
@@ -22,6 +23,7 @@ public class DashboardController : Controller
         IChunkingService chunkingService,
         IVectorStore vectorStore,
         ITaskRepository taskRepository,
+        IRagAnalysisService ragAnalysisService,
         ILogger<DashboardController> logger)
     {
         _serpService = serpService;
@@ -29,6 +31,7 @@ public class DashboardController : Controller
         _chunkingService = chunkingService;
         _vectorStore = vectorStore;
         _taskRepository = taskRepository;
+        _ragAnalysisService = ragAnalysisService;
         _logger = logger;
     }
 
@@ -147,6 +150,25 @@ public class DashboardController : Controller
             success = true,
             report,
             ragInputs = allRagInputs
+        });
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> StartAnalyzing([FromBody] RagInputDto ragInput, CancellationToken ct)
+    {
+        if (ragInput == null || string.IsNullOrWhiteSpace(ragInput.Keyword))
+        {
+            return BadRequest(new { message = "Valid RAG Input payload is required." });
+        }
+
+        _logger.LogInformation("Starting Principal SEO RAG analysis for keyword: {Keyword}, Target Site: {Site}", ragInput.Keyword, ragInput.TargetWebsite);
+
+        var analysisResult = await _ragAnalysisService.RunCompetitiveAnalysisAsync(ragInput, ct);
+
+        return Ok(new
+        {
+            success = true,
+            analysis = analysisResult
         });
     }
 

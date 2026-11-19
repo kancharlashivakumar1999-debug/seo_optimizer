@@ -87,7 +87,9 @@
         <div class="run-status" id="runText"></div>
       </div>
       <div id="ragInspectBox" style="display:none;background:var(--surface-2);border-radius:var(--radius);padding:12px;font-size:13px;">
-        <strong>Generated RAG Input Ready:</strong>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <strong>Generated RAG Input Ready:</strong>
+        </div>
         <div id="ragInspectSummary" style="margin-top:6px;max-height:140px;overflow:auto;font-family:monospace;"></div>
       </div>
     </div>
@@ -121,7 +123,7 @@ const icons={
   play:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z"/></svg>',
   arrow:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
   search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
-  doc:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>'
+  spark:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/></svg>'
 };
 
 /* ---------- state & local storage (RAM + Local Storage) ---------- */
@@ -131,22 +133,25 @@ function lsLoad(){try{const r=localStorage.getItem(LS_KEY);return r?JSON.parse(r
 function lsSave(){try{localStorage.setItem(LS_KEY,JSON.stringify(tasks))}catch(e){}}
 
 function saveTask(t){
+  tasks = lsLoad();
   const idx=tasks.findIndex(x=>x.id===t.id);
   if(idx>=0) tasks[idx]=t; else tasks.unshift(t);
   lsSave();
 }
 function saveRun(t,r){
-  if(!t.runs) t.runs=[];
-  t.runs.push(r);
+  tasks = lsLoad();
+  const currentTask = tasks.find(x=>x.id===t.id) || t;
+  if(!currentTask.runs) currentTask.runs=[];
+  currentTask.runs.push(r);
   lsSave();
 }
 function removeTask(id){
-  tasks=tasks.filter(x=>x.id!==id);
+  tasks = lsLoad().filter(x=>x.id!==id);
   lsSave();
 }
 function setStatus(){
   $("#storeStatus").innerHTML='<span class="dot ok"></span>RAM / Local Storage';
-  $("#engineStatus").innerHTML='<span class="dot ok"></span>SERP API + Vector Ready';
+  $("#engineStatus").innerHTML='<span class="dot ok"></span>SERP API + Azure OpenAI Ready';
 }
 
 /* ---------- metrics ---------- */
@@ -167,7 +172,7 @@ function deltaPill(prev,cur){
 function pairs(t){const out=[];(t.keywords||[]).forEach(k=>(t.locations||[]).forEach(l=>out.push({keyword:k,location:l})));return out}
 function resultFor(run,k,l){return run?(run.results||[]).find(x=>x.keyword===k&&x.location===l):null}
 function globalStats(){
-  let kw=0,runs=0,top3=0,top10=0,up=0,down=0,sum=0,cnt=0,openRecs=0;
+  let kw=0,runs=0,top3=0,top10=0,up=0,down=0,sum=0,cnt=0;
   tasks.forEach(t=>{
     kw+=pairs(t).length;runs+=(t.runs||[]).length;
     const L=lastRun(t),P=prevRun(t);if(!L)return;
@@ -177,7 +182,7 @@ function globalStats(){
       if(p){const a=p.rank??NF,b=r.rank??NF;if(b<a-0.05)up++;else if(b>a+0.05)down++}
     });
   });
-  return{kw,runs,top3,top10,up,down,openRecs,avg:cnt?sum/cnt:null};
+  return{kw,runs,top3,top10,up,down,avg:cnt?sum/cnt:null};
 }
 
 /* ---------- Execute Live SERP API + Prepare RAG Input ---------- */
@@ -263,6 +268,169 @@ async function executeLiveRun(t,note,implemented){
   }
 }
 
+/* ---------- Start Analyzing with Azure OpenAI RAG ---------- */
+async function startAnalyzingRag(reportId, ragInputIndex = 0) {
+  const btn = $("#btnStartAnalyzing");
+  const box = $("#ragAnalysisOutputBox");
+  const spinner = $("#ragAnalysisSpinner");
+  const content = $("#ragAnalysisContent");
+
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spin" style="display:inline-block;margin-right:6px"></span>Analyzing Top 5 Competitors...`;
+  box.style.display = "block";
+  spinner.style.display = "flex";
+  content.style.display = "none";
+
+  try {
+    const rawData = localStorage.getItem("rag_input_" + reportId);
+    if (!rawData) throw new Error("No RAG input payload found for this report.");
+    const parsedList = JSON.parse(rawData);
+    const targetPayload = parsedList[ragInputIndex] || parsedList[0];
+
+    const response = await fetch("/Dashboard/StartAnalyzing", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(targetPayload)
+    });
+
+    if (!response.ok) throw new Error("Analysis request failed with status: " + response.status);
+
+    const result = await response.json();
+    const data = result.analysis;
+
+    // Cache analysis output with the report
+    localStorage.setItem("analysis_output_" + reportId, JSON.stringify(data));
+
+    // Render structured results
+    renderAnalysisOutput(data);
+    toast("Principal SEO Gap Analysis Completed!");
+  } catch (err) {
+    alert("Error during analysis: " + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `${icons.spark}Start Analyzing`;
+    spinner.style.display = "none";
+    content.style.display = "block";
+  }
+}
+
+function renderAnalysisOutput(data) {
+  const el = $("#ragAnalysisContent");
+  if(!data) { el.innerHTML = "<p class='muted'>No analysis available.</p>"; return; }
+
+  el.innerHTML = `
+    <!-- Target Analysis & Rank Prediction Strip -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px;">
+      <div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px;">
+        <h3 class="h3" style="color:var(--accent);margin-bottom:6px;">Target Assessment</h3>
+        <p style="margin:0 0 6px;font-size:13.5px;"><strong>URL:</strong> ${esc(data.targetAnalysis?.targetUrl)}</p>
+        <p style="margin:0 0 6px;font-size:13.5px;"><strong>Intent Fit:</strong> <span class="pill ${data.targetAnalysis?.currentIntentFit==='High'?'up':(data.targetAnalysis?.currentIntentFit==='Moderate'?'flat':'down')}">${esc(data.targetAnalysis?.currentIntentFit)}</span></p>
+        <p style="margin:6px 0 0;font-size:13px;color:var(--ink-2);">${esc(data.targetAnalysis?.overallDrawbackSummary)}</p>
+      </div>
+
+      <div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px;">
+        <h3 class="h3" style="color:var(--up);margin-bottom:6px;">Rank Prediction Impact</h3>
+        <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px;">
+          <div><span style="font-size:11.5px;color:var(--ink-3);">Current</span><div style="font-size:20px;font-weight:800;">#${data.rankPrediction?.baselinePosition}</div></div>
+          <div>${icons.arrow}</div>
+          <div><span style="font-size:11.5px;color:var(--ink-3);">Projected</span><div style="font-size:20px;font-weight:800;color:var(--up);">#${data.rankPrediction?.projectedPosition}</div></div>
+          <div style="margin-left:auto;"><span class="pill up">${esc(data.rankPrediction?.projectedRange)}</span></div>
+        </div>
+        <p style="margin:0;font-size:12.5px;color:var(--ink-2);"><strong>Timeline:</strong> ${esc(data.rankPrediction?.timelineWeeks)} | <strong>Confidence:</strong> ${(data.rankPrediction?.confidenceScore*100).toFixed(0)}%</p>
+      </div>
+    </div>
+
+    <!-- Gap Analysis -->
+    <div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px;margin-bottom:16px;">
+      <h3 class="h3" style="margin-bottom:10px;">Competitive Gap Analysis</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <div>
+          <strong style="font-size:13px;color:var(--down);">Our Major Drawbacks:</strong>
+          <ul class="bul iss" style="font-size:13px;">
+            ${(data.gapAnalysis?.ourMajorDrawbacks||[]).map(d=>`<li>${esc(d)}</li>`).join("")}
+          </ul>
+        </div>
+        <div>
+          <strong style="font-size:13px;color:var(--up);">Competitor Advantages:</strong>
+          <ul class="bul win" style="font-size:13px;">
+            ${(data.gapAnalysis?.competitorAdvantages||[]).map(a=>`<li>${esc(a)}</li>`).join("")}
+          </ul>
+        </div>
+      </div>
+      <div style="margin-top:10px;">
+        <strong style="font-size:13px;">Missing Content Topics &amp; Questions:</strong>
+        <div class="chips" style="margin-top:6px;">
+          ${(data.gapAnalysis?.missingContentTopics||[]).map(t=>`<span class="chip" style="background:var(--surface-2);">${esc(t)}</span>`).join("")}
+        </div>
+      </div>
+    </div>
+
+    <!-- Top 5 Competitors Deep Dive -->
+    <div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px;margin-bottom:16px;">
+      <h3 class="h3" style="margin-bottom:8px;">Top 5 Ranking Competitors Deep Dive</h3>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Rank</th><th>Competitor</th><th>Why They Are Ahead</th><th>Content Angle</th></tr></thead>
+          <tbody>
+            ${(data.competitorDeepDive||[]).map(c=>`
+              <tr>
+                <td><span class="rank ${c.position<=3?'t3':'t10'}">#${c.position}</span></td>
+                <td><strong>${esc(c.competitorName)}</strong><div class="muted" style="font-size:11.5px;">${esc(c.url)}</div></td>
+                <td style="max-width:280px;white-space:normal;font-size:13px;">${esc(c.whyTheyAreAhead)}</td>
+                <td style="max-width:260px;white-space:normal;font-size:13px;color:var(--ink-2);">${esc(c.contentAngle)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Recommended Modifications & Action Plan -->
+    <div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px;margin-bottom:16px;">
+      <h3 class="h3" style="margin-bottom:10px;">Recommended On-Page Modifications</h3>
+      <div style="display:flex;flex-direction:column;gap:10px;font-size:13.5px;">
+        <div style="background:var(--surface-2);padding:10px;border-radius:var(--radius);">
+          <strong>Recommended Title Tag:</strong>
+          <div style="font-weight:700;color:var(--accent);margin:3px 0;">${esc(data.recommendedModifications?.titleTag?.recommended)}</div>
+          <span class="muted" style="font-size:12px;">${esc(data.recommendedModifications?.titleTag?.rationale)}</span>
+        </div>
+        <div style="background:var(--surface-2);padding:10px;border-radius:var(--radius);">
+          <strong>Recommended Meta Description:</strong>
+          <div style="font-weight:600;margin:3px 0;">${esc(data.recommendedModifications?.metaDescription?.recommended)}</div>
+          <span class="muted" style="font-size:12px;">${esc(data.recommendedModifications?.metaDescription?.rationale)}</span>
+        </div>
+        <div style="background:var(--surface-2);padding:10px;border-radius:var(--radius);">
+          <strong>Optimized H1:</strong> <span style="font-weight:700;">${esc(data.recommendedModifications?.h1)}</span>
+        </div>
+      </div>
+
+      <h4 style="font-size:13.5px;margin:16px 0 8px;">Action Plan &amp; Execution Steps</h4>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Pri</th><th>Action</th><th>Owner</th><th>Effort</th><th>Impact</th></tr></thead>
+          <tbody>
+            ${(data.recommendedModifications?.actionPlan||[]).map(act=>`
+              <tr>
+                <td><strong>#${act.priority}</strong></td>
+                <td style="white-space:normal;font-size:13.5px;">${esc(act.action)}</td>
+                <td><span class="chip">${esc(act.owner)}</span></td>
+                <td>${esc(act.effort)}</td>
+                <td><span class="pill ${act.expectedImpact==='High'?'up':'flat'}">${esc(act.expectedImpact)}</span></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Raw JSON Inspector toggle -->
+    <details style="margin-top:10px;">
+      <summary style="font-size:12.5px;color:var(--accent);cursor:pointer;font-weight:600;">View Raw Output JSON</summary>
+      <pre style="background:var(--surface-2);border-radius:var(--radius);padding:10px;margin-top:8px;font-size:11.5px;max-height:260px;overflow:auto;">${esc(JSON.stringify(data, null, 2))}</pre>
+    </details>
+  `;
+}
+
 /* ---------- routing & nav ---------- */
 let charts=[];
 function killCharts(){charts.forEach(c=>c.destroy());charts=[]}
@@ -270,6 +438,7 @@ function navHTML(active){return`<a href="#dashboard" class="${active==="dashboar
 let detailTab="overview";
 
 function route(){
+  tasks = lsLoad(); // Always reload state from storage on route change
   killCharts();
   const h=location.hash.slice(1)||"dashboard";
   const deep=h.startsWith("task-")||h.startsWith("report-");
@@ -312,6 +481,7 @@ function emptyState(){
 
 /* ---------- Dashboard ---------- */
 function renderDashboard(){
+  tasks = lsLoad();
   const v=$("#dynamicContainer");const s=globalStats();
   v.innerHTML=`<div class="head"><div><h1>Dashboard</h1><p>${tasks.length?`${tasks.length} task${tasks.length>1?"s":""} tracking ${s.kw} keyword–location pairs`:"No tasks configured"}</p></div>
     <button class="btn primary" data-new>${icons.plus}New task</button></div>
@@ -343,6 +513,7 @@ function renderDashboard(){
 
 /* ---------- Tasks list ---------- */
 function renderTasks(){
+  tasks = lsLoad(); // Direct reactive refresh
   const v=$("#dynamicContainer");
   v.innerHTML=`<div class="head"><div><h1>Ranking tasks</h1><p>Configured domains and target keywords.</p></div><button class="btn primary" data-new>${icons.plus}New task</button></div>
   ${tasks.length?`
@@ -360,28 +531,51 @@ function renderTasks(){
 
 /* ---------- Task detail ---------- */
 function renderDetail(t){
-  const v=$("#dynamicContainer");const L=lastRun(t);
-  v.innerHTML=`<div class="crumb"><a href="#tasks">Tasks</a> / ${esc(t.name)}</div>
-  <div class="head"><div><h1>${esc(t.name)}</h1>
-    <div class="meta-row"><span>Website: <b>${esc(t.website)}</b></span><span>Keywords: <b>${(t.keywords||[]).join(", ")}</b></span><span>Locations: <b>${(t.locations||[]).join(", ")}</b></span></div></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn danger" data-del="${t.id}">Delete</button><button class="btn primary" data-run="${t.id}">${icons.play}Run now</button></div></div>
+  tasks = lsLoad();
+  const current = tasks.find(x=>x.id===t.id) || t;
+  const v=$("#dynamicContainer");const L=lastRun(current);
+  v.innerHTML=`<div class="crumb"><a href="#tasks">Tasks</a> / ${esc(current.name)}</div>
+  <div class="head"><div><h1>${esc(current.name)}</h1>
+    <div class="meta-row"><span>Website: <b>${esc(current.website)}</b></span><span>Keywords: <b>${(current.keywords||[]).join(", ")}</b></span><span>Locations: <b>${(current.locations||[]).join(", ")}</b></span></div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn danger" data-del="${current.id}">Delete</button><button class="btn primary" data-run="${current.id}">${icons.play}Run now</button></div></div>
   ${L?`<div class="panel" style="margin-bottom:18px"><h2>Latest Run Results (Live SERP)</h2>
     <div class="tbl-wrap"><table><thead><tr><th>Keyword</th><th>Location</th><th class="num">Rank</th><th>Status</th></tr></thead><tbody>
     ${(L.results||[]).map(r=>`<tr><td><b>${esc(r.keyword)}</b></td><td>${esc(r.location)}</td><td class="num">${rankBadge(r.rank)}</td><td>${r.rank?"Found in SERP":"Not in Top 10"}</td></tr>`).join("")}
     </tbody></table></div></div>`:emptyState()}`;
 }
 
-/* ---------- Report Page (with RAG Input Display) ---------- */
+/* ---------- Report Page (with Start Analyzing & RAG Input Display) ---------- */
 function renderReport(t,i){
-  const run=t.runs[i];const v=$("#dynamicContainer");
+  tasks = lsLoad();
+  const current = tasks.find(x=>x.id===t.id) || t;
+  const run=current.runs[i];const v=$("#dynamicContainer");
   const ragDataStr=localStorage.getItem("rag_input_" + run.id);
   let ragData = null;
   try { if(ragDataStr) ragData = JSON.parse(ragDataStr); } catch(e){}
 
-  v.innerHTML=`<div class="crumb"><a href="#tasks">Tasks</a> / <a href="#task-${t.id}">${esc(t.name)}</a> / Run ${i+1} Report</div>
-  <div class="head"><div><h1>Live SERP Run ${i+1} &amp; RAG Input</h1>
-    <div class="meta-row"><span>Tracked Site: <b>${esc(t.website)}</b></span><span>Executed: ${fmtDT(run.at)}</span></div></div>
-    <div><button class="btn primary" data-run="${t.id}">${icons.play}Run Again</button></div></div>
+  const existingAnalysisStr = localStorage.getItem("analysis_output_" + run.id);
+  let existingAnalysis = null;
+  try { if(existingAnalysisStr) existingAnalysis = JSON.parse(existingAnalysisStr); } catch(e){}
+
+  v.innerHTML=`<div class="crumb"><a href="#tasks">Tasks</a> / <a href="#task-${current.id}">${esc(current.name)}</a> / Run ${i+1} Report</div>
+  <div class="head"><div><h1>Live SERP Run ${i+1} &amp; Competitive Analysis</h1>
+    <div class="meta-row"><span>Tracked Site: <b>${esc(current.website)}</b></span><span>Executed: ${fmtDT(run.at)}</span></div></div>
+    <div style="display:flex;gap:10px;align-items:center;">
+      <button class="btn primary" id="btnStartAnalyzing" onclick="startAnalyzingRag('${run.id}', 0)">${icons.spark}Start Analyzing</button>
+      <button class="btn" data-run="${current.id}">${icons.play}Run Again</button>
+    </div></div>
+
+  <!-- RAG Analysis Results Container -->
+  <div class="panel" id="ragAnalysisOutputBox" style="${existingAnalysis?'':'display:none;'}margin-bottom:18px;border:1.5px solid var(--accent);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <h2>AI Competitive Gap Analysis &amp; Action Plan</h2>
+      <span class="pill up">Powered by Azure OpenAI RAG</span>
+    </div>
+    <div id="ragAnalysisSpinner" style="display:none;padding:24px 0;justify-content:center;align-items:center;gap:10px;">
+      <span class="spin"></span>Analyzing top 5 competitors and calculating rank predictions...
+    </div>
+    <div id="ragAnalysisContent"></div>
+  </div>
 
   <div class="panel" style="margin-bottom:18px">
     <h2>SERP Organic Results</h2>
@@ -393,10 +587,14 @@ function renderReport(t,i){
   <div class="panel" style="margin-bottom:18px">
     <h2>Prepared RAG Input (Stored in RAM / LocalStorage)</h2>
     <p class="sub">Structured context extracted from SERP and competitor scraping ready for Azure OpenAI prompt generation.</p>
-    <div style="background:var(--surface-2);border-radius:var(--radius);padding:14px;overflow:auto;max-height:380px;">
+    <div style="background:var(--surface-2);border-radius:var(--radius);padding:14px;overflow:auto;max-height:300px;">
       <pre style="margin:0;font-family:monospace;font-size:12.5px;white-space:pre-wrap;">${esc(JSON.stringify(ragData, null, 2))}</pre>
     </div>
   </div>`;
+
+  if(existingAnalysis) {
+    renderAnalysisOutput(existingAnalysis);
+  }
 }
 
 /* ---------- task modal ---------- */
@@ -455,14 +653,18 @@ $("#saveTask").onclick=async()=>{
   saveTask(t);
   closeModals();
   toast("Task created successfully");
-  location.hash="task-"+t.id;
+
+  // Immediate UI update to tasks view
+  location.hash="tasks";
   route();
 };
 
 /* ---------- run modal ---------- */
 let runTaskId=null;
 function openRunModal(id){
-  const t=tasks.find(x=>x.id===id);if(!t)return;runTaskId=id;
+  const currentTasks = lsLoad();
+  const t=currentTasks.find(x=>x.id===id);if(!t)return;
+  runTaskId=id;
   $("#rmTitle").textContent="Run live SERP: “"+t.name+"”";
   $("#fNote").value="";
   $("#runProg").hidden=true;
@@ -473,7 +675,8 @@ function openRunModal(id){
 }
 
 $("#runGo").onclick=async()=>{
-  const t=tasks.find(x=>x.id===runTaskId);if(!t)return;
+  const currentTasks = lsLoad();
+  const t=currentTasks.find(x=>x.id===runTaskId);if(!t)return;
   $("#runGo").disabled=true;
   const run = await executeLiveRun(t, $("#fNote").value, []);
   if(run) {
@@ -481,14 +684,14 @@ $("#runGo").onclick=async()=>{
     toast("Live SERP queried and RAG Input generated!");
     setTimeout(()=>{
       closeModals();
-      location.hash=reportHash(t, t.runs.length-1);
-    }, 1500);
+      location.hash=reportHash(t, (t.runs||[]).length-1);
+    }, 1200);
   } else {
     $("#runGo").disabled=false;
   }
 };
 
-function closeModals(){$$(".scrim").forEach(m=>m.classList.remove("open"));route()}
+function closeModals(){$$(".scrim").forEach(m=>m.classList.remove("open"));}
 $$("[data-close]").forEach(b=>b.onclick=closeModals);
 $$(".scrim").forEach(s=>s.addEventListener("mousedown",e=>{if(e.target===s)closeModals()}));
 
@@ -496,7 +699,7 @@ $$(".scrim").forEach(s=>s.addEventListener("mousedown",e=>{if(e.target===s)close
 document.addEventListener("click",e=>{
   if(e.target.closest("[data-new]")){openTaskModal();return}
   const r=e.target.closest("[data-run]");if(r){e.stopPropagation();openRunModal(r.dataset.run);return}
-  const d=e.target.closest("[data-del]");if(d){const t=tasks.find(x=>x.id===d.dataset.del);if(t&&confirm(`Delete “${t.name}”?`)){removeTask(t.id);location.hash="tasks";toast("Task deleted")}return}
+  const d=e.target.closest("[data-del]");if(d){const currentTasks=lsLoad();const t=currentTasks.find(x=>x.id===d.dataset.del);if(t&&confirm(`Delete “${t.name}”?`)){removeTask(t.id);location.hash="tasks";toast("Task deleted");route();}return}
   const hr=e.target.closest("[data-href]");if(hr){location.hash=hr.dataset.href;return}
   const g=e.target.closest("[data-go]");if(g){location.hash="task-"+g.dataset.go}
 });

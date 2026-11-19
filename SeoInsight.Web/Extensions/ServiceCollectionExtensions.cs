@@ -83,6 +83,14 @@ public static class ServiceCollectionExtensions
         .AddPolicyHandler(retryPolicy)
         .AddPolicyHandler(timeoutPolicy);
 
+        services.AddHttpClient("SerpApiClient", (sp, client) =>
+        {
+            var options = sp.GetRequiredService<IOptions<SerpOptions>>().Value;
+            client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+        })
+        .AddPolicyHandler(retryPolicy)
+        .AddPolicyHandler(timeoutPolicy);
+
         return services;
     }
 
@@ -98,9 +106,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ICompetitorScraperService, CompetitorScraperService>();
         services.AddScoped<IChunkingService, ChunkingService>();
 
-        // Embeddings & Vector Store (InMemory for Phase 1)
+        // Embeddings, Vector Store & RAG Analysis
         services.AddSingleton<IEmbeddingService, EmbeddingService>();
         services.AddSingleton<IVectorStore, InMemoryVectorStore>();
+        services.AddScoped<IRagAnalysisService, RagAnalysisService>();
 
         // Repositories
         services.AddSingleton<ITaskRepository, TaskRepository>();
