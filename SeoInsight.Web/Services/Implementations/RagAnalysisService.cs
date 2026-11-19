@@ -1,9 +1,6 @@
 using System.Text;
 using System.Text.Json;
-using Azure;
-using Azure.AI.OpenAI;
 using Microsoft.Extensions.Options;
-using OpenAI.Chat;
 using SeoInsight.Web.Models.Dtos;
 using SeoInsight.Web.Models.Options;
 using SeoInsight.Web.Services.Interfaces;
@@ -12,61 +9,111 @@ namespace SeoInsight.Web.Services.Implementations;
 
 public sealed class RagAnalysisService : IRagAnalysisService
 {
-    private readonly IOptionsMonitor<AzureOpenAIOptions> _azureOptions;
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IOptionsMonitor<GoogleGeminiOptions> _geminiOptions;
     private readonly ILogger<RagAnalysisService> _logger;
 
     public RagAnalysisService(
-        IOptionsMonitor<AzureOpenAIOptions> azureOptions,
+        IHttpClientFactory httpClientFactory,
+        IOptionsMonitor<GoogleGeminiOptions> geminiOptions,
         ILogger<RagAnalysisService> logger)
     {
-        _azureOptions = azureOptions;
+        _httpClientFactory = httpClientFactory;
+        _geminiOptions = geminiOptions;
         _logger = logger;
     }
 
     public async Task<SeoAnalysisOutputDto> RunCompetitiveAnalysisAsync(RagInputDto ragInput, CancellationToken ct = default)
     {
-        var opt = _azureOptions.CurrentValue;
+        var opt = _geminiOptions.CurrentValue;
 
         // Construct Prompt from live RAG input using Top 5 Competitors
         var prompt = BuildPrompt(ragInput);
 
-        if (string.IsNullOrWhiteSpace(opt.Endpoint) || string.IsNullOrWhiteSpace(opt.ApiKey))
+        if (string.IsNullOrWhiteSpace(opt.ApiKey))
         {
-            _logger.LogInformation("Azure OpenAI credentials not configured. Generating realistic grounded analysis based on empirical RAG input.");
+            _logger.LogInformation("Google Gemini API Key not configured. Generating realistic grounded analysis based on empirical RAG input.");
             return GenerateGroundedFallback(ragInput);
         }
 
         try
         {
-            var client = new AzureOpenAIClient(new Uri(opt.Endpoint), new AzureKeyCredential(opt.ApiKey));
-            var chatClient = client.GetChatClient(opt.ChatDeployment);
+            var client = _httpClientFactory.CreateClient("GoogleGeminiClient");
+            var modelName = string.IsNullOrWhiteSpace(opt.ChatModel) ? "gemini-3.5-flash-lite" : opt.ChatModel;
+            var requestUrl = $"https://generativelanguage.googleapis.com/v1beta/models/{modelName}:generateContent?key={opt.ApiKey}";
 
-            var messages = new List<ChatMessage>
+            var requestPayload = new
             {
-                new SystemChatMessage("You are a Principal Technical SEO & Growth Strategist. Return ONLY a valid JSON object matching the requested schema. Do not wrap in markdown text outside the code block, and do not add conversational pleasantries."),
-                new UserChatMessage(prompt)
+                systemInstruction = new
+                {
+                    parts = new[]
+                    {
+                        new { text = "You are a Principal Technical SEO & Growth Strategist. Return ONLY a valid JSON object matching the requested schema. Do not wrap in markdown text outside the code block, and do not add conversational pleasantries." }
+                    }
+                },
+                contents = new[]
+                {
+                    new
+                    {
+                        parts = new[]
+                        {
+                            new { text = prompt }
+                        }
+                    }
+                },
+                generationConfig = new
+                {
+                    temperature = opt.Temperature,
+                    maxOutputTokens = opt.MaxOutputTokens,
+                    responseMimeType = "application/json"
+                }
             };
 
-            var chatOptions = new ChatCompletionOptions
+            var content = new StringContent(JsonSerializer.Serialize(requestPayload), Encoding.UTF8, "application/json");
+            _logger.LogInformation("Executing Google Gemini API call ({Model}) for Principal SEO analysis...", modelName);
+
+            var response = await client.PostAsync(requestUrl, content, ct);
+
+            if (!response.IsSuccessStatusCode)
             {
-                Temperature = (float)opt.Temperature,
-                MaxOutputTokenCount = opt.MaxOutputTokens,
-                ResponseFormat = ChatResponseFormat.CreateJsonObjectFormat()
-            };
+                var err = await response.Content.ReadAsStringAsync(ct);
+                _logger.LogWarning("Google Gemini API returned status {StatusCode}: {Error}. Falling back to grounded empirical analysis.", response.StatusCode, err);
+                return GenerateGroundedFallback(ragInput);
+            }
 
-            var completion = await chatClient.CompleteChatAsync(messages, chatOptions, ct);
-            var content = completion.Value.Content[0].Text;
+            var responseJson = await response.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(responseJson);
+            var root = doc.RootElement;
 
-            var result = JsonSerializer.Deserialize<SeoAnalysisOutputDto>(content, new JsonSerializerOptions
+            if (root.TryGetProperty("candidates", out var candidates) && candidates.GetArrayLength() > 0)
             {
-                PropertyNameCaseInsensitive = true
-            });
+                var firstCandidate = candidates[0];
+                if (firstCandidate.TryGetProperty("content", out var candidateContent) &&
+                    candidateContent.TryGetProperty("parts", out var parts) && parts.GetArrayLength() > 0)
+                {
+                    var generatedText = parts[0].TryGetProperty("text", out var tProp) ? tProp.GetString() : null;
 
-            return result ?? GenerateGroundedFallback(ragInput);
+                    if (!string.IsNullOrWhiteSpace(generatedText))
+                    {
+                        var parsedResult = JsonSerializer.Deserialize<SeoAnalysisOutputDto>(generatedText, new JsonSerializerOptions
+                        {
+                            PropertyNameCaseInsensitive = true
+                        });
+
+                        if (parsedResult != null)
+                        {
+                            _logger.LogInformation("Successfully parsed Google Gemini SEO analysis output.");
+                            return parsedResult;
+                        }
+                    }
+                }
+            }
+
+            return GenerateGroundedFallback(ragInput);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Azure OpenAI chat call failed. Returning grounded empirical analysis.");
+            _logger.LogWarning(ex, "Google Gemini API call failed. Returning grounded empirical analysis.");
             return GenerateGroundedFallback(ragInput);
         }
     }

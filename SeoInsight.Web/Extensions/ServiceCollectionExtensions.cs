@@ -30,8 +30,8 @@ public static class ServiceCollectionExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
-        services.AddOptions<AzureOpenAIOptions>()
-            .Bind(configuration.GetSection(AzureOpenAIOptions.SectionName))
+        services.AddOptions<GoogleGeminiOptions>()
+            .Bind(configuration.GetSection(GoogleGeminiOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
@@ -87,6 +87,13 @@ public static class ServiceCollectionExtensions
         {
             var options = sp.GetRequiredService<IOptions<SerpOptions>>().Value;
             client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+        })
+        .AddPolicyHandler(retryPolicy)
+        .AddPolicyHandler(timeoutPolicy);
+
+        services.AddHttpClient("GoogleGeminiClient", (sp, client) =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(60);
         })
         .AddPolicyHandler(retryPolicy)
         .AddPolicyHandler(timeoutPolicy);

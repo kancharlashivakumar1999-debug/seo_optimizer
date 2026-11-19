@@ -151,7 +151,7 @@ function removeTask(id){
 }
 function setStatus(){
   $("#storeStatus").innerHTML='<span class="dot ok"></span>RAM / Local Storage';
-  $("#engineStatus").innerHTML='<span class="dot ok"></span>SERP API + Azure OpenAI Ready';
+  $("#engineStatus").innerHTML='<span class="dot ok"></span>SERP API + Google Gemini Ready';
 }
 
 /* ---------- metrics ---------- */
@@ -569,7 +569,7 @@ function renderReport(t,i){
   <div class="panel" id="ragAnalysisOutputBox" style="${existingAnalysis?'':'display:none;'}margin-bottom:18px;border:1.5px solid var(--accent);">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
       <h2>AI Competitive Gap Analysis &amp; Action Plan</h2>
-      <span class="pill up">Powered by Azure OpenAI RAG</span>
+      <span class="pill up">Powered by Google Gemini RAG</span>
     </div>
     <div id="ragAnalysisSpinner" style="display:none;padding:24px 0;justify-content:center;align-items:center;gap:10px;">
       <span class="spin"></span>Analyzing top 5 competitors and calculating rank predictions...
