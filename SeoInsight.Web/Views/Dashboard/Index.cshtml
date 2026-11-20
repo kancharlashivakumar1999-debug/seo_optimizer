@@ -847,7 +847,7 @@ async function renderReport(t,i){
       </div>
     </div>
     <div style="display:flex;gap:10px;align-items:center;">
-      <button class="btn primary" id="btnStartAnalyzing" onclick="startAnalyzingRag('${runId}', 0)">
+      <button class="btn primary" id="btnStartAnalyzing" data-analyze data-runid="${runId || ''}" onclick="window.startAnalyzingRag && window.startAnalyzingRag('${runId}', 0)">
         ${icons.spark}Start Analyzing
       </button>
       <button class="btn" data-run="${current.id}">${icons.play}Run Again</button>
@@ -998,6 +998,15 @@ $$("[data-close]").forEach(b=>b.onclick=closeModals);
 /* ---------- Global clicks ---------- */
 document.addEventListener("click",e=>{
   if(e.target.closest("[data-new]")){openTaskModal();return}
+  const sa=e.target.closest("#btnStartAnalyzing, [data-analyze]");
+  if(sa){
+    e.stopPropagation();
+    const runId = sa.dataset.runid || sa.getAttribute("data-runid");
+    if(runId) {
+      startAnalyzingRag(runId, 0);
+      return;
+    }
+  }
   const r=e.target.closest("[data-run]");if(r){e.stopPropagation();openRunModal(r.dataset.run);return}
   const d=e.target.closest("[data-del]");if(d){const t=tasks.find(x=>x.id===d.dataset.del);if(t&&confirm(`Delete “${t.name}”?`)){removeTask(t.id);location.hash="tasks";toast("Task deleted from PostgreSQL");route();}return}
   const hr=e.target.closest("[data-href]");if(hr){location.hash=hr.dataset.href;return}
@@ -1006,8 +1015,12 @@ document.addEventListener("click",e=>{
 
 $("#themeBtn").onclick=()=>{const rt=document.documentElement;const dark=rt.dataset.theme?rt.dataset.theme==="dark":matchMedia("(prefers-color-scheme: dark)").matches;rt.dataset.theme=dark?"light":"dark";route()};
 
-setStatus();
-syncFromDb().then(() => route());
+  // Expose methods needed by inline HTML onclick handlers or window scope
+  window.startAnalyzingRag = startAnalyzingRag;
+  window.openTaskModal = openTaskModal;
+
+  setStatus();
+  syncFromDb().then(() => route());
 })();
 </script>
 }
