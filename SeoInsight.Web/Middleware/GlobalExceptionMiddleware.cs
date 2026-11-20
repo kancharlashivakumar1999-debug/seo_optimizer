@@ -5,7 +5,8 @@ using Microsoft.AspNetCore.Mvc;
 namespace SeoInsight.Web.Middleware;
 
 /// <summary>
-/// Global middleware providing correlation ID and friendly Error view (MVC) or ProblemDetails (AJAX).
+/// Global middleware providing correlation ID and structured error payload capture (AJAX/Fetch & MVC).
+/// Returns exact error message and details in standard ProblemDetails format so the frontend toaster can display them.
 /// </summary>
 public sealed class GlobalExceptionMiddleware
 {
@@ -33,7 +34,7 @@ public sealed class GlobalExceptionMiddleware
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unhandled exception occurred on path {Path}", context.Request.Path);
+                _logger.LogError(ex, "Unhandled exception occurred on path {Path}: {Message}", context.Request.Path, ex.Message);
                 await HandleExceptionAsync(context, ex, correlationId);
             }
         }
@@ -48,26 +49,32 @@ public sealed class GlobalExceptionMiddleware
 
         context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
 
+        // Extract most descriptive error message from exception hierarchy
+        var exactMessage = exception.InnerException != null 
+            ? $"{exception.Message} -> {exception.InnerException.Message}" 
+            : exception.Message;
+
         bool isAjax = context.Request.Headers["X-Requested-With"] == "XMLHttpRequest"
-                      || context.Request.Headers.Accept.Any(a => a != null && a.Contains("application/json", StringComparison.OrdinalIgnoreCase));
+                      || context.Request.Headers.Accept.Any(a => a != null && a.Contains("application/json", StringComparison.OrdinalIgnoreCase))
+                      || context.Request.ContentType?.Contains("application/json", StringComparison.OrdinalIgnoreCase) == true;
 
         if (isAjax)
         {
-            context.Response.ContentType = "application/problem+json";
-            var problem = new ProblemDetails
+            context.Response.ContentType = "application/json";
+            var errorResponse = new
             {
-                Status = (int)HttpStatusCode.InternalServerError,
-                Title = "An error occurred while processing your request.",
-                Detail = exception.Message,
-                Instance = context.Request.Path,
-                Extensions = { ["correlationId"] = correlationId }
+                success = false,
+                title = "Database / Server Error",
+                message = exactMessage,
+                detail = exception.ToString(),
+                path = context.Request.Path.Value,
+                correlationId
             };
 
-            await context.Response.WriteAsync(JsonSerializer.Serialize(problem));
+            await context.Response.WriteAsync(JsonSerializer.Serialize(errorResponse));
         }
         else
         {
-            // For standard browser requests, redirect to Error view
             context.Response.Redirect($"/Home/Error?correlationId={Uri.EscapeDataString(correlationId)}");
         }
     }

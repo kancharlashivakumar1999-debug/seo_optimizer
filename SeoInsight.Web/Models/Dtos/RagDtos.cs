@@ -12,6 +12,8 @@ public sealed class RunTaskRequest
 
 public sealed class RagInputDto
 {
+    public string? RunId { get; set; }
+    public string? TaskId { get; set; }
     public string Keyword { get; set; } = string.Empty;
     public string Location { get; set; } = string.Empty;
     public string TargetWebsite { get; set; } = string.Empty;

@@ -103,6 +103,7 @@
 
 @section Scripts {
 <script>
+(() => {
 /* ---------- helpers ---------- */
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>[...r.querySelectorAll(s)];
@@ -115,7 +116,50 @@ const clip=(s,n)=>{s=String(s||"").trim();return s.length>n?s.slice(0,n-1)+"…"
 const normDomain=s=>String(s||"").toLowerCase().replace(/^https?:\/\//,"").replace(/^www\./,"").split(/[\/?#\s]/)[0].trim();
 const DEFAULT_PROMPT="Analyze SERP ranking for {keyword} in {location} for website {website}. Identify top competitors, extract key topics and recommend content optimizations.";
 
-function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove("show"),2600)}
+function toast(msg, isError = false){
+  const t=$("#toast");
+  t.textContent=msg;
+  t.className = isError ? "toast show error" : "toast show success";
+  clearTimeout(toast._t);
+  toast._t=setTimeout(()=>{
+    t.className="toast";
+  }, isError ? 6500 : 3000);
+}
+
+// Global fetch interceptor to catch any server or network error centrally and show in toaster
+const originalFetch = window.fetch;
+window.fetch = async function(...args) {
+  try {
+    const response = await originalFetch.apply(this, args);
+    if (!response.ok) {
+      let errText = "HTTP " + response.status + ": " + response.statusText;
+      try {
+        const cloned = response.clone();
+        const errJson = await cloned.json();
+        errText = errJson.message || errJson.title || errJson.detail || errText;
+      } catch(e) {
+        try {
+          const raw = await response.clone().text();
+          if (raw) errText = raw.length > 200 ? raw.slice(0, 200) + "..." : raw;
+        } catch(_) {}
+      }
+      toast(errText, true);
+    }
+    return response;
+  } catch (netErr) {
+    toast("Network Error: " + netErr.message, true);
+    throw netErr;
+  }
+};
+
+window.addEventListener("unhandledrejection", e => {
+  const msg = e.reason?.message || String(e.reason || "Unhandled error");
+  toast(msg, true);
+});
+
+window.addEventListener("error", e => {
+  toast(e.message || "Script error", true);
+});
 const icons={
   dash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>',
   tasks:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1.2 1.2L7 5M3.5 12l1.2 1.2L7 11M3.5 18l1.2 1.2L7 17"/></svg>',
@@ -126,31 +170,79 @@ const icons={
   spark:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/></svg>'
 };
 
-/* ---------- state & local storage (RAM + Local Storage) ---------- */
+/* ---------- state & database storage (PostgreSQL Database Exclusively) ---------- */
 let tasks=[];
-const LS_KEY="seoinsight-tasks-live";
-function lsLoad(){try{const r=localStorage.getItem(LS_KEY);return r?JSON.parse(r):[]}catch(e){return[]}}
-function lsSave(){try{localStorage.setItem(LS_KEY,JSON.stringify(tasks))}catch(e){}}
+let currentRagInputs = {};
+let currentAnalyses = {};
 
-function saveTask(t){
-  tasks = lsLoad();
+async function syncFromDb(){
+  try {
+    const res = await fetch("/Dashboard/GetDashboardState");
+    if(res.ok) {
+      const data = await res.json();
+      if(data.tasks && data.tasks.length) {
+        const dbTasks = [];
+        for(const t of data.tasks) {
+          let kw = [];
+          try { kw = JSON.parse(t.targetKeywordsJson || "[]"); } catch(e){}
+          let loc = [];
+          try { loc = JSON.parse(t.targetLocationsJson || "[]"); } catch(e){}
+
+          dbTasks.push({
+            id: t.taskId,
+            name: t.taskName || t.targetWebsite,
+            website: t.targetWebsite,
+            keywords: kw.length ? kw : ["General SEO"],
+            locations: loc.length ? loc : ["Global"],
+            prompt: t.promptTemplate || DEFAULT_PROMPT,
+            runs: []
+          });
+        }
+        if(dbTasks.length) {
+          tasks = dbTasks;
+        }
+      }
+    }
+  } catch(e) {
+    console.warn("DB sync warning:", e);
+  }
+}
+
+async function saveTask(t){
   const idx=tasks.findIndex(x=>x.id===t.id);
   if(idx>=0) tasks[idx]=t; else tasks.unshift(t);
-  lsSave();
+
+  try {
+    await fetch("/Dashboard/SaveTask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(t)
+    });
+  } catch(e){}
 }
-function saveRun(t,r){
-  tasks = lsLoad();
+
+async function saveRun(t,r){
   const currentTask = tasks.find(x=>x.id===t.id) || t;
   if(!currentTask.runs) currentTask.runs=[];
   currentTask.runs.push(r);
-  lsSave();
+
+  try {
+    await fetch("/Dashboard/SaveRun", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ task: currentTask, run: r })
+    });
+  } catch(e){}
 }
-function removeTask(id){
-  tasks = lsLoad().filter(x=>x.id!==id);
-  lsSave();
+
+async function removeTask(id){
+  tasks = tasks.filter(x=>x.id!==id);
+  try {
+    await fetch("/Dashboard/DeleteTask?id=" + encodeURIComponent(id), { method: "DELETE" });
+  } catch(e){}
 }
 function setStatus(){
-  $("#storeStatus").innerHTML='<span class="dot ok"></span>RAM / Local Storage';
+  $("#storeStatus").innerHTML='<span class="dot ok"></span>PostgreSQL (Dapper + Projected Columns)';
   $("#engineStatus").innerHTML='<span class="dot ok"></span>SERP API + Google Gemini Ready';
 }
 
@@ -217,9 +309,11 @@ async function executeLiveRun(t,note,implemented){
     bar.style.width="100%";
     txt.textContent="SERP results & RAG inputs prepared successfully!";
 
-    // Store RAG Inputs locally in RAM/localStorage
-    const ragInputsKey = "rag_input_" + data.report.id;
-    localStorage.setItem(ragInputsKey, JSON.stringify(data.ragInputs));
+    // Retain RAG Input for analysis session
+    currentRagInputs[data.report.id] = data.ragInputs;
+    if (data.runId) {
+      currentRagInputs[data.runId] = data.ragInputs;
+    }
 
     // Show preview of RAG Input
     $("#ragInspectBox").style.display="block";
@@ -258,7 +352,7 @@ async function executeLiveRun(t,note,implemented){
         competitors: (data.report.keywordResults[0]?.top10||[]).slice(0,4).map(c=>({ domain: c.domain, name: c.title, whyTop: c.snippet })),
         recommendations: []
       },
-      ragInputId: ragInputsKey
+      ragInputId: data.report.id
     };
 
     return run;
@@ -268,7 +362,7 @@ async function executeLiveRun(t,note,implemented){
   }
 }
 
-/* ---------- Start Analyzing with Azure OpenAI RAG ---------- */
+/* ---------- Start Analyzing with Google Gemini RAG ---------- */
 async function startAnalyzingRag(reportId, ragInputIndex = 0) {
   const btn = $("#btnStartAnalyzing");
   const box = $("#ragAnalysisOutputBox");
@@ -282,9 +376,32 @@ async function startAnalyzingRag(reportId, ragInputIndex = 0) {
   content.style.display = "none";
 
   try {
-    const rawData = localStorage.getItem("rag_input_" + reportId);
-    if (!rawData) throw new Error("No RAG input payload found for this report.");
-    const parsedList = JSON.parse(rawData);
+    let parsedList = currentRagInputs[reportId];
+    if (!parsedList || !parsedList.length) {
+      // Try to load from server database
+      const res = await fetch("/Dashboard/GetRunDetail?id=" + encodeURIComponent(reportId));
+      if (res.ok) {
+        const detail = await res.json();
+        if (detail.ragPayload) {
+          parsedList = [{
+            runId: detail.ragPayload.runId,
+            taskId: detail.ragPayload.taskId,
+            keyword: detail.ragPayload.targetKeyword,
+            location: detail.ragPayload.targetLocation,
+            targetWebsite: detail.ragPayload.targetWebsite,
+            ownRankPosition: detail.ragPayload.ownRankPosition,
+            topCompetitors: JSON.parse(detail.ragPayload.topCompetitorsJson || "[]"),
+            peopleAlsoAsk: JSON.parse(detail.ragPayload.peopleAlsoAskJson || "[]"),
+            ingestedChunks: JSON.parse(detail.ragPayload.ingestedChunksJson || "[]"),
+            systemPrompt: detail.ragPayload.systemPrompt,
+            userPrompt: detail.ragPayload.userPrompt
+          }];
+          currentRagInputs[reportId] = parsedList;
+        }
+      }
+    }
+
+    if (!parsedList || !parsedList.length) throw new Error("No RAG input payload found for this report.");
     const targetPayload = parsedList[ragInputIndex] || parsedList[0];
 
     const response = await fetch("/Dashboard/StartAnalyzing", {
@@ -298,14 +415,14 @@ async function startAnalyzingRag(reportId, ragInputIndex = 0) {
     const result = await response.json();
     const data = result.analysis;
 
-    // Cache analysis output with the report
-    localStorage.setItem("analysis_output_" + reportId, JSON.stringify(data));
+    // Cache analysis output in memory for current view
+    currentAnalyses[reportId] = data;
 
     // Render structured results
     renderAnalysisOutput(data);
-    toast("Principal SEO Gap Analysis Completed!");
+    toast("Principal SEO Gap Analysis Completed & Saved in PostgreSQL!");
   } catch (err) {
-    alert("Error during analysis: " + err.message);
+    toast("Error during analysis: " + err.message, true);
   } finally {
     btn.disabled = false;
     btn.innerHTML = `${icons.spark}Start Analyzing`;
@@ -314,29 +431,57 @@ async function startAnalyzingRag(reportId, ragInputIndex = 0) {
   }
 }
 
+// Helper to safely get properties regardless of PascalCase or camelCase
+function prop(obj, ...keys) {
+  if (!obj) return undefined;
+  for (const k of keys) {
+    if (obj[k] !== undefined && obj[k] !== null) return obj[k];
+    const lower = k.charAt(0).toLowerCase() + k.slice(1);
+    if (obj[lower] !== undefined && obj[lower] !== null) return obj[lower];
+    const upper = k.charAt(0).toUpperCase() + k.slice(1);
+    if (obj[upper] !== undefined && obj[upper] !== null) return obj[upper];
+  }
+  return undefined;
+}
+
 function renderAnalysisOutput(data) {
   const el = $("#ragAnalysisContent");
   if(!data) { el.innerHTML = "<p class='muted'>No analysis available.</p>"; return; }
+
+  const target = prop(data, "targetAnalysis") || {};
+  const rankPred = prop(data, "rankPrediction") || {};
+  const gap = prop(data, "gapAnalysis") || {};
+  const compDeep = prop(data, "competitorDeepDive") || [];
+  const mods = prop(data, "recommendedModifications") || {};
+  const titleTag = prop(mods, "titleTag") || {};
+  const metaDesc = prop(mods, "metaDescription") || {};
+  const actionPlan = prop(mods, "actionPlan") || [];
+
+  const curPos = prop(target, "currentPosition") ?? prop(rankPred, "baselinePosition") ?? "–";
+  const projPos = prop(rankPred, "projectedPosition") ?? "–";
+  const intentFit = prop(target, "currentIntentFit") || "Moderate";
+  const conf = prop(rankPred, "confidenceScore");
+  const confText = typeof conf === 'number' ? (conf * 100).toFixed(0) + "%" : "–";
 
   el.innerHTML = `
     <!-- Target Analysis & Rank Prediction Strip -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px;">
       <div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px;">
         <h3 class="h3" style="color:var(--accent);margin-bottom:6px;">Target Assessment</h3>
-        <p style="margin:0 0 6px;font-size:13.5px;"><strong>URL:</strong> ${esc(data.targetAnalysis?.targetUrl)}</p>
-        <p style="margin:0 0 6px;font-size:13.5px;"><strong>Intent Fit:</strong> <span class="pill ${data.targetAnalysis?.currentIntentFit==='High'?'up':(data.targetAnalysis?.currentIntentFit==='Moderate'?'flat':'down')}">${esc(data.targetAnalysis?.currentIntentFit)}</span></p>
-        <p style="margin:6px 0 0;font-size:13px;color:var(--ink-2);">${esc(data.targetAnalysis?.overallDrawbackSummary)}</p>
+        <p style="margin:0 0 6px;font-size:13.5px;"><strong>URL:</strong> ${esc(prop(target, "targetUrl") || "–")}</p>
+        <p style="margin:0 0 6px;font-size:13.5px;"><strong>Intent Fit:</strong> <span class="pill ${intentFit==='High'?'up':(intentFit==='Moderate'?'flat':'down')}">${esc(intentFit)}</span></p>
+        <p style="margin:6px 0 0;font-size:13px;color:var(--ink-2);">${esc(prop(target, "overallDrawbackSummary") || "–")}</p>
       </div>
 
       <div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px;">
         <h3 class="h3" style="color:var(--up);margin-bottom:6px;">Rank Prediction Impact</h3>
         <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px;">
-          <div><span style="font-size:11.5px;color:var(--ink-3);">Current</span><div style="font-size:20px;font-weight:800;">#${data.rankPrediction?.baselinePosition}</div></div>
+          <div><span style="font-size:11.5px;color:var(--ink-3);">Current</span><div style="font-size:20px;font-weight:800;">#${curPos}</div></div>
           <div>${icons.arrow}</div>
-          <div><span style="font-size:11.5px;color:var(--ink-3);">Projected</span><div style="font-size:20px;font-weight:800;color:var(--up);">#${data.rankPrediction?.projectedPosition}</div></div>
-          <div style="margin-left:auto;"><span class="pill up">${esc(data.rankPrediction?.projectedRange)}</span></div>
+          <div><span style="font-size:11.5px;color:var(--ink-3);">Projected</span><div style="font-size:20px;font-weight:800;color:var(--up);">#${projPos}</div></div>
+          <div style="margin-left:auto;"><span class="pill up">${esc(prop(rankPred, "projectedRange") || "Projected Top 5")}</span></div>
         </div>
-        <p style="margin:0;font-size:12.5px;color:var(--ink-2);"><strong>Timeline:</strong> ${esc(data.rankPrediction?.timelineWeeks)} | <strong>Confidence:</strong> ${(data.rankPrediction?.confidenceScore*100).toFixed(0)}%</p>
+        <p style="margin:0;font-size:12.5px;color:var(--ink-2);"><strong>Timeline:</strong> ${esc(prop(rankPred, "timelineWeeks") || "4 to 6 weeks")} | <strong>Confidence:</strong> ${confText}</p>
       </div>
     </div>
 
@@ -347,20 +492,20 @@ function renderAnalysisOutput(data) {
         <div>
           <strong style="font-size:13px;color:var(--down);">Our Major Drawbacks:</strong>
           <ul class="bul iss" style="font-size:13px;">
-            ${(data.gapAnalysis?.ourMajorDrawbacks||[]).map(d=>`<li>${esc(d)}</li>`).join("")}
+            ${(prop(gap, "ourMajorDrawbacks") || []).map(d=>`<li>${esc(d)}</li>`).join("")}
           </ul>
         </div>
         <div>
           <strong style="font-size:13px;color:var(--up);">Competitor Advantages:</strong>
           <ul class="bul win" style="font-size:13px;">
-            ${(data.gapAnalysis?.competitorAdvantages||[]).map(a=>`<li>${esc(a)}</li>`).join("")}
+            ${(prop(gap, "competitorAdvantages") || []).map(a=>`<li>${esc(a)}</li>`).join("")}
           </ul>
         </div>
       </div>
       <div style="margin-top:10px;">
         <strong style="font-size:13px;">Missing Content Topics &amp; Questions:</strong>
         <div class="chips" style="margin-top:6px;">
-          ${(data.gapAnalysis?.missingContentTopics||[]).map(t=>`<span class="chip" style="background:var(--surface-2);">${esc(t)}</span>`).join("")}
+          ${(prop(gap, "missingContentTopics") || []).map(t=>`<span class="chip" style="background:var(--surface-2);">${esc(t)}</span>`).join("")}
         </div>
       </div>
     </div>
@@ -372,12 +517,12 @@ function renderAnalysisOutput(data) {
         <table>
           <thead><tr><th>Rank</th><th>Competitor</th><th>Why They Are Ahead</th><th>Content Angle</th></tr></thead>
           <tbody>
-            ${(data.competitorDeepDive||[]).map(c=>`
+            ${compDeep.map(c=>`
               <tr>
-                <td><span class="rank ${c.position<=3?'t3':'t10'}">#${c.position}</span></td>
-                <td><strong>${esc(c.competitorName)}</strong><div class="muted" style="font-size:11.5px;">${esc(c.url)}</div></td>
-                <td style="max-width:280px;white-space:normal;font-size:13px;">${esc(c.whyTheyAreAhead)}</td>
-                <td style="max-width:260px;white-space:normal;font-size:13px;color:var(--ink-2);">${esc(c.contentAngle)}</td>
+                <td><span class="rank ${(prop(c, "position")||0)<=3?'t3':'t10'}">#${prop(c, "position")||"–"}</span></td>
+                <td><strong>${esc(prop(c, "competitorName")||"–")}</strong><div class="muted" style="font-size:11.5px;">${esc(prop(c, "url")||"")}</div></td>
+                <td style="max-width:280px;white-space:normal;font-size:13px;">${esc(prop(c, "whyTheyAreAhead")||"–")}</td>
+                <td style="max-width:260px;white-space:normal;font-size:13px;color:var(--ink-2);">${esc(prop(c, "contentAngle")||"–")}</td>
               </tr>
             `).join("")}
           </tbody>
@@ -391,16 +536,16 @@ function renderAnalysisOutput(data) {
       <div style="display:flex;flex-direction:column;gap:10px;font-size:13.5px;">
         <div style="background:var(--surface-2);padding:10px;border-radius:var(--radius);">
           <strong>Recommended Title Tag:</strong>
-          <div style="font-weight:700;color:var(--accent);margin:3px 0;">${esc(data.recommendedModifications?.titleTag?.recommended)}</div>
-          <span class="muted" style="font-size:12px;">${esc(data.recommendedModifications?.titleTag?.rationale)}</span>
+          <div style="font-weight:700;color:var(--accent);margin:3px 0;">${esc(prop(titleTag, "recommended") || "–")}</div>
+          <span class="muted" style="font-size:12px;">${esc(prop(titleTag, "rationale") || "")}</span>
         </div>
         <div style="background:var(--surface-2);padding:10px;border-radius:var(--radius);">
           <strong>Recommended Meta Description:</strong>
-          <div style="font-weight:600;margin:3px 0;">${esc(data.recommendedModifications?.metaDescription?.recommended)}</div>
-          <span class="muted" style="font-size:12px;">${esc(data.recommendedModifications?.metaDescription?.rationale)}</span>
+          <div style="font-weight:600;margin:3px 0;">${esc(prop(metaDesc, "recommended") || "–")}</div>
+          <span class="muted" style="font-size:12px;">${esc(prop(metaDesc, "rationale") || "")}</span>
         </div>
         <div style="background:var(--surface-2);padding:10px;border-radius:var(--radius);">
-          <strong>Optimized H1:</strong> <span style="font-weight:700;">${esc(data.recommendedModifications?.h1)}</span>
+          <strong>Optimized H1:</strong> <span style="font-weight:700;">${esc(prop(mods, "h1") || "–")}</span>
         </div>
       </div>
 
@@ -409,13 +554,13 @@ function renderAnalysisOutput(data) {
         <table>
           <thead><tr><th>Pri</th><th>Action</th><th>Owner</th><th>Effort</th><th>Impact</th></tr></thead>
           <tbody>
-            ${(data.recommendedModifications?.actionPlan||[]).map(act=>`
+            ${actionPlan.map(act=>`
               <tr>
-                <td><strong>#${act.priority}</strong></td>
-                <td style="white-space:normal;font-size:13.5px;">${esc(act.action)}</td>
-                <td><span class="chip">${esc(act.owner)}</span></td>
-                <td>${esc(act.effort)}</td>
-                <td><span class="pill ${act.expectedImpact==='High'?'up':'flat'}">${esc(act.expectedImpact)}</span></td>
+                <td><strong>#${prop(act, "priority")||1}</strong></td>
+                <td style="white-space:normal;font-size:13.5px;">${esc(prop(act, "action")||"")}</td>
+                <td><span class="chip">${esc(prop(act, "owner")||"SEO")}</span></td>
+                <td>${esc(prop(act, "effort")||"Medium")}</td>
+                <td><span class="pill ${prop(act, "expectedImpact")==='High'?'up':'flat'}">${esc(prop(act, "expectedImpact")||"Medium")}</span></td>
               </tr>
             `).join("")}
           </tbody>
@@ -438,18 +583,32 @@ function navHTML(active){return`<a href="#dashboard" class="${active==="dashboar
 let detailTab="overview";
 
 function route(){
-  tasks = lsLoad(); // Always reload state from storage on route change
   killCharts();
   const h=location.hash.slice(1)||"dashboard";
   const deep=h.startsWith("task-")||h.startsWith("report-");
   $("#nav").innerHTML=navHTML(deep?"tasks":h);$("#navM").innerHTML=navHTML(deep?"tasks":h);
 
   if(h.startsWith("report-")){
-    const m=h.match(/^report-([a-z0-9]+)-(\d+)$/);
-    const t=m&&tasks.find(x=>x.id===m[1]);
-    const i=m?+m[2]-1:-1;
-    if(t&&t.runs[i]){window.scrollTo(0,0);return renderReport(t,i)}
-    location.hash="tasks";return;
+    // Match report-{taskId}-{runIndex} where taskId can be a GUID with dashes
+    const lastDash = h.lastIndexOf("-");
+    if(lastDash > 7) {
+      const taskId = h.slice(7, lastDash);
+      const runIdx = parseInt(h.slice(lastDash + 1), 10) - 1;
+      const t = tasks.find(x => x.id === taskId || x.id.replace(/-/g, "") === taskId.replace(/-/g, ""));
+      if(t && t.runs && t.runs[runIdx]){
+        window.scrollTo(0,0);
+        return renderReport(t, runIdx);
+      }
+    }
+    // Also allow direct run_id matching: #report-{runId}
+    const directRunId = h.slice(7);
+    for(const t of tasks){
+      const foundIdx = (t.runs||[]).findIndex(r => r.id === directRunId || r.id.replace(/-/g,"") === directRunId.replace(/-/g,""));
+      if(foundIdx >= 0){
+        window.scrollTo(0,0);
+        return renderReport(t, foundIdx);
+      }
+    }
   }
   if(h.startsWith("task-")){
     const t=tasks.find(x=>"task-"+x.id===h);
@@ -481,7 +640,6 @@ function emptyState(){
 
 /* ---------- Dashboard ---------- */
 function renderDashboard(){
-  tasks = lsLoad();
   const v=$("#dynamicContainer");const s=globalStats();
   v.innerHTML=`<div class="head"><div><h1>Dashboard</h1><p>${tasks.length?`${tasks.length} task${tasks.length>1?"s":""} tracking ${s.kw} keyword–location pairs`:"No tasks configured"}</p></div>
     <button class="btn primary" data-new>${icons.plus}New task</button></div>
@@ -513,7 +671,6 @@ function renderDashboard(){
 
 /* ---------- Tasks list ---------- */
 function renderTasks(){
-  tasks = lsLoad(); // Direct reactive refresh
   const v=$("#dynamicContainer");
   v.innerHTML=`<div class="head"><div><h1>Ranking tasks</h1><p>Configured domains and target keywords.</p></div><button class="btn primary" data-new>${icons.plus}New task</button></div>
   ${tasks.length?`
@@ -524,46 +681,178 @@ function renderTasks(){
       <div class="c-loc chips">${(t.locations||[]).map(l=>`<span class="chip">${esc(l)}</span>`).join("")}</div>
       <div class="c-kw">${(t.keywords||[]).length}</div>
       <div class="c-last"><span class="big-rank">${L?fmtRank(runAvg(L)):"–"}</span></div>
-      <div><button class="btn sm primary" data-run="${t.id}">${icons.play}Run now</button></div>
+      <div><button class="btn sm" data-go="${t.id}">View Details</button></div>
     </div>`}).join("")}
   </div>`:emptyState()}`;
 }
 
 /* ---------- Task detail ---------- */
-function renderDetail(t){
-  tasks = lsLoad();
+async function renderDetail(t){
   const current = tasks.find(x=>x.id===t.id) || t;
-  const v=$("#dynamicContainer");const L=lastRun(current);
+  const v=$("#dynamicContainer");
+
+  // Load latest execution runs directly from PostgreSQL
+  let runs = current.runs || [];
+  try {
+    const res = await fetch("/Dashboard/GetTaskDetail?id=" + encodeURIComponent(current.id));
+    if (res.ok) {
+      const data = await res.json();
+      if (data.runs && data.runs.length) {
+        runs = data.runs.map((r, idx) => ({
+          id: r.runId,
+          at: new Date(r.startedAt).getTime(),
+          note: r.runNote || "",
+          implemented: JSON.parse(r.implementedChangesJson || "[]"),
+          score: r.visibilityScore,
+          avgRank: r.averageRank,
+          status: r.runStatus,
+          hasGapAnalysis: r.hasGapAnalysis
+        }));
+        current.runs = runs;
+      }
+    }
+  } catch(e) {
+    console.warn("Could not load runs from DB", e);
+  }
+
+  const hasRuns = runs.length > 0;
+  const latestRun = hasRuns ? runs[0] : null;
+
   v.innerHTML=`<div class="crumb"><a href="#tasks">Tasks</a> / ${esc(current.name)}</div>
-  <div class="head"><div><h1>${esc(current.name)}</h1>
-    <div class="meta-row"><span>Website: <b>${esc(current.website)}</b></span><span>Keywords: <b>${(current.keywords||[]).join(", ")}</b></span><span>Locations: <b>${(current.locations||[]).join(", ")}</b></span></div></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn danger" data-del="${current.id}">Delete</button><button class="btn primary" data-run="${current.id}">${icons.play}Run now</button></div></div>
-  ${L?`<div class="panel" style="margin-bottom:18px"><h2>Latest Run Results (Live SERP)</h2>
-    <div class="tbl-wrap"><table><thead><tr><th>Keyword</th><th>Location</th><th class="num">Rank</th><th>Status</th></tr></thead><tbody>
-    ${(L.results||[]).map(r=>`<tr><td><b>${esc(r.keyword)}</b></td><td>${esc(r.location)}</td><td class="num">${rankBadge(r.rank)}</td><td>${r.rank?"Found in SERP":"Not in Top 10"}</td></tr>`).join("")}
-    </tbody></table></div></div>`:emptyState()}`;
+  <div class="head">
+    <div>
+      <h1>${esc(current.name)}</h1>
+      <div class="meta-row">
+        <span>Website: <b>${esc(current.website)}</b></span>
+        <span>Keywords: <b>${(current.keywords||[]).join(", ")}</b></span>
+        <span>Locations: <b>${(current.locations||[]).join(", ")}</b></span>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn" onclick="openTaskModal(tasks.find(x=>x.id==='${current.id}'))">Edit Task</button>
+      <button class="btn danger" data-del="${current.id}">Delete</button>
+      <button class="btn primary" data-run="${current.id}">
+        ${icons.play}${hasRuns ? "Run again" : "Run now"}
+      </button>
+    </div>
+  </div>
+
+  ${hasRuns ? `
+  <div class="panel" style="margin-bottom:18px">
+    <h2>Execution Runs History (${runs.length})</h2>
+    <p class="sub">Click any run to view its live SERP results, RAG Input payload, and AI competitive analysis.</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Run</th>
+            <th>Executed At</th>
+            <th class="num">Visibility</th>
+            <th class="num">Avg Rank</th>
+            <th>AI Analysis</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${runs.map((r, idx) => `
+            <tr class="click" data-href="${reportHash(current, idx)}" style="cursor:pointer;">
+              <td><b>Run #${runs.length - idx}</b></td>
+              <td class="muted">${fmtDT(r.at)}</td>
+              <td class="num"><span class="pill ${r.score >= 50 ? 'up' : 'flat'}">${r.score}%</span></td>
+              <td class="num"><b>${fmtRank(r.avgRank)}</b></td>
+              <td>${r.hasGapAnalysis ? '<span class="pill up">AI Analyzed</span>' : '<span class="pill flat">RAG Ready</span>'}</td>
+              <td><button class="btn sm" data-href="${reportHash(current, idx)}">Open Report</button></td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  ` : emptyState()}`;
 }
 
 /* ---------- Report Page (with Start Analyzing & RAG Input Display) ---------- */
-function renderReport(t,i){
-  tasks = lsLoad();
+async function renderReport(t,i){
   const current = tasks.find(x=>x.id===t.id) || t;
-  const run=current.runs[i];const v=$("#dynamicContainer");
-  const ragDataStr=localStorage.getItem("rag_input_" + run.id);
-  let ragData = null;
-  try { if(ragDataStr) ragData = JSON.parse(ragDataStr); } catch(e){}
+  const run=current.runs ? current.runs[i] : null;
+  const v=$("#dynamicContainer");
+  const runId = run ? run.id : (typeof i === 'string' ? i : null);
 
-  const existingAnalysisStr = localStorage.getItem("analysis_output_" + run.id);
-  let existingAnalysis = null;
-  try { if(existingAnalysisStr) existingAnalysis = JSON.parse(existingAnalysisStr); } catch(e){}
+  v.innerHTML=`<div class="crumb"><a href="#tasks">Tasks</a> / <a href="#task-${current.id}">${esc(current.name)}</a> / Run ${typeof i==='number' ? i+1 : ''} Report</div>
+  <div class="loading-box"><span class="spin"></span> Loading run results and RAG payload from PostgreSQL...</div>`;
 
-  v.innerHTML=`<div class="crumb"><a href="#tasks">Tasks</a> / <a href="#task-${current.id}">${esc(current.name)}</a> / Run ${i+1} Report</div>
-  <div class="head"><div><h1>Live SERP Run ${i+1} &amp; Competitive Analysis</h1>
-    <div class="meta-row"><span>Tracked Site: <b>${esc(current.website)}</b></span><span>Executed: ${fmtDT(run.at)}</span></div></div>
+  let ragData = runId ? currentRagInputs[runId] : null;
+  let existingAnalysis = runId ? currentAnalyses[runId] : null;
+  let serpCompetitors = [];
+
+  if (runId) {
+    try {
+      const res = await fetch("/Dashboard/GetRunDetail?id=" + encodeURIComponent(runId));
+      if (res.ok) {
+        const detail = await res.json();
+        if (detail.competitors) {
+          serpCompetitors = detail.competitors;
+        }
+
+        if (detail.ragPayload) {
+          try {
+            const topComps = JSON.parse(detail.ragPayload.topCompetitorsJson || "[]");
+            const chunks = JSON.parse(detail.ragPayload.ingestedChunksJson || "[]");
+            const paa = JSON.parse(detail.ragPayload.peopleAlsoAskJson || "[]");
+            ragData = [{
+              runId: detail.ragPayload.runId,
+              taskId: detail.ragPayload.taskId,
+              keyword: detail.ragPayload.targetKeyword,
+              location: detail.ragPayload.targetLocation,
+              targetWebsite: detail.ragPayload.targetWebsite,
+              ownRankPosition: detail.ragPayload.ownRankPosition,
+              topCompetitors: topComps,
+              peopleAlsoAsk: paa,
+              ingestedChunks: chunks,
+              systemPrompt: detail.ragPayload.systemPrompt,
+              userPrompt: detail.ragPayload.userPrompt
+            }];
+            currentRagInputs[runId] = ragData;
+          } catch(e){}
+        }
+
+        if (detail.analysis) {
+          try {
+            existingAnalysis = {
+              targetAnalysis: JSON.parse(detail.analysis.targetAnalysisJson || "{}"),
+              competitorDeepDive: JSON.parse(detail.analysis.competitorDeepDiveJson || "[]"),
+              gapAnalysis: JSON.parse(detail.analysis.gapAnalysisJson || "{}"),
+              recommendedModifications: JSON.parse(detail.analysis.recommendedModificationsJson || "{}"),
+              rankPrediction: JSON.parse(detail.analysis.rankPredictionJson || "{}")
+            };
+            currentAnalyses[runId] = existingAnalysis;
+          } catch(e){}
+        }
+      }
+    } catch(e){
+      console.warn("Failed to fetch run detail", e);
+    }
+  }
+
+  const runDate = run ? fmtDT(run.at) : "Recent Run";
+
+  v.innerHTML=`<div class="crumb"><a href="#tasks">Tasks</a> / <a href="#task-${current.id}">${esc(current.name)}</a> / Run Details</div>
+  <div class="head">
+    <div>
+      <h1>Live SERP Run &amp; Competitive Analysis</h1>
+      <div class="meta-row">
+        <span>Tracked Site: <b>${esc(current.website)}</b></span>
+        <span>Executed: <b>${runDate}</b></span>
+        <span>Run ID: <code style="font-size:12px;">${runId || '–'}</code></span>
+      </div>
+    </div>
     <div style="display:flex;gap:10px;align-items:center;">
-      <button class="btn primary" id="btnStartAnalyzing" onclick="startAnalyzingRag('${run.id}', 0)">${icons.spark}Start Analyzing</button>
+      <button class="btn primary" id="btnStartAnalyzing" onclick="startAnalyzingRag('${runId}', 0)">
+        ${icons.spark}Start Analyzing
+      </button>
       <button class="btn" data-run="${current.id}">${icons.play}Run Again</button>
-    </div></div>
+    </div>
+  </div>
 
   <!-- RAG Analysis Results Container -->
   <div class="panel" id="ragAnalysisOutputBox" style="${existingAnalysis?'':'display:none;'}margin-bottom:18px;border:1.5px solid var(--accent);">
@@ -579,14 +868,26 @@ function renderReport(t,i){
 
   <div class="panel" style="margin-bottom:18px">
     <h2>SERP Organic Results</h2>
-    <div class="tbl-wrap"><table><thead><tr><th>Keyword</th><th>Location</th><th class="num">Position</th><th>Top 1 Result</th></tr></thead><tbody>
-    ${(run.results||[]).map(r=>`<tr><td><b>${esc(r.keyword)}</b></td><td>${esc(r.location)}</td><td class="num">${rankBadge(r.rank)}</td><td class="muted">${esc(r.top10?.[0]?.name||"–")}</td></tr>`).join("")}
-    </tbody></table></div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Rank</th><th>Domain</th><th>Title</th><th>URL / Snippet</th></tr></thead>
+        <tbody>
+          ${serpCompetitors.length ? serpCompetitors.map(c => `
+            <tr>
+              <td><span class="rank ${c.position <= 3 ? 't3' : (c.position <= 10 ? 't10' : '')}">#${c.position}</span></td>
+              <td><b>${esc(c.domain)}</b> ${c.isTargetSite ? '<span class="you-tag">Your Site</span>' : ''}</td>
+              <td>${esc(c.title)}</td>
+              <td class="muted" style="max-width:300px;font-size:12.5px;">${esc(c.snippet || c.url)}</td>
+            </tr>
+          `).join("") : '<tr><td colspan="4" class="muted">No competitor records found for this run.</td></tr>'}
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <div class="panel" style="margin-bottom:18px">
-    <h2>Prepared RAG Input (Stored in RAM / LocalStorage)</h2>
-    <p class="sub">Structured context extracted from SERP and competitor scraping ready for Azure OpenAI prompt generation.</p>
+    <h2>Prepared RAG Input (Stored in PostgreSQL)</h2>
+    <p class="sub">Structured context extracted from SERP and competitor scraping ready for Google Gemini prompt generation.</p>
     <div style="background:var(--surface-2);border-radius:var(--radius);padding:14px;overflow:auto;max-height:300px;">
       <pre style="margin:0;font-family:monospace;font-size:12.5px;white-space:pre-wrap;">${esc(JSON.stringify(ragData, null, 2))}</pre>
     </div>
@@ -662,8 +963,7 @@ $("#saveTask").onclick=async()=>{
 /* ---------- run modal ---------- */
 let runTaskId=null;
 function openRunModal(id){
-  const currentTasks = lsLoad();
-  const t=currentTasks.find(x=>x.id===id);if(!t)return;
+  const t=tasks.find(x=>x.id===id);if(!t)return;
   runTaskId=id;
   $("#rmTitle").textContent="Run live SERP: “"+t.name+"”";
   $("#fNote").value="";
@@ -675,17 +975,17 @@ function openRunModal(id){
 }
 
 $("#runGo").onclick=async()=>{
-  const currentTasks = lsLoad();
-  const t=currentTasks.find(x=>x.id===runTaskId);if(!t)return;
+  const t=tasks.find(x=>x.id===runTaskId);if(!t)return;
   $("#runGo").disabled=true;
   const run = await executeLiveRun(t, $("#fNote").value, []);
   if(run) {
-    saveRun(t, run);
-    toast("Live SERP queried and RAG Input generated!");
+    if(!t.runs) t.runs = [];
+    t.runs.push(run);
+    toast("Live SERP queried and saved in PostgreSQL!");
     setTimeout(()=>{
       closeModals();
-      location.hash=reportHash(t, (t.runs||[]).length-1);
-    }, 1200);
+      location.hash=reportHash(t, t.runs.length - 1);
+    }, 400);
   } else {
     $("#runGo").disabled=false;
   }
@@ -699,15 +999,15 @@ $$("[data-close]").forEach(b=>b.onclick=closeModals);
 document.addEventListener("click",e=>{
   if(e.target.closest("[data-new]")){openTaskModal();return}
   const r=e.target.closest("[data-run]");if(r){e.stopPropagation();openRunModal(r.dataset.run);return}
-  const d=e.target.closest("[data-del]");if(d){const currentTasks=lsLoad();const t=currentTasks.find(x=>x.id===d.dataset.del);if(t&&confirm(`Delete “${t.name}”?`)){removeTask(t.id);location.hash="tasks";toast("Task deleted");route();}return}
+  const d=e.target.closest("[data-del]");if(d){const t=tasks.find(x=>x.id===d.dataset.del);if(t&&confirm(`Delete “${t.name}”?`)){removeTask(t.id);location.hash="tasks";toast("Task deleted from PostgreSQL");route();}return}
   const hr=e.target.closest("[data-href]");if(hr){location.hash=hr.dataset.href;return}
   const g=e.target.closest("[data-go]");if(g){location.hash="task-"+g.dataset.go}
 });
 
 $("#themeBtn").onclick=()=>{const rt=document.documentElement;const dark=rt.dataset.theme?rt.dataset.theme==="dark":matchMedia("(prefers-color-scheme: dark)").matches;rt.dataset.theme=dark?"light":"dark";route()};
 
-tasks=lsLoad();
 setStatus();
-route();
+syncFromDb().then(() => route());
+})();
 </script>
 }

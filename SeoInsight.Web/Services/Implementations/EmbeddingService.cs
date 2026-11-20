@@ -1,44 +1,88 @@
-using Azure;
-using Azure.AI.OpenAI;
+using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Options;
-using OpenAI.Embeddings;
 using SeoInsight.Web.Models.Options;
 using SeoInsight.Web.Services.Interfaces;
 
 namespace SeoInsight.Web.Services.Implementations;
 
+/// <summary>
+/// Embedding generator implementation using Google Gemini Embedding model (text-embedding-004).
+/// Replaces AzureOpenAIClient with Google Gemini API.
+/// </summary>
 public sealed class EmbeddingService : IEmbeddingService
 {
-    private readonly IOptionsMonitor<AzureOpenAIOptions> _azureOptions;
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IOptionsMonitor<GoogleGeminiOptions> _geminiOptions;
     private readonly ILogger<EmbeddingService> _logger;
 
-    public EmbeddingService(IOptionsMonitor<AzureOpenAIOptions> azureOptions, ILogger<EmbeddingService> logger)
+    public EmbeddingService(
+        IHttpClientFactory httpClientFactory,
+        IOptionsMonitor<GoogleGeminiOptions> geminiOptions,
+        ILogger<EmbeddingService> logger)
     {
-        _azureOptions = azureOptions;
+        _httpClientFactory = httpClientFactory;
+        _geminiOptions = geminiOptions;
         _logger = logger;
     }
 
     public async Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken ct = default)
     {
-        var opt = _azureOptions.CurrentValue;
+        var opt = _geminiOptions.CurrentValue;
 
-        if (string.IsNullOrWhiteSpace(opt.Endpoint) || string.IsNullOrWhiteSpace(opt.ApiKey))
+        if (string.IsNullOrWhiteSpace(opt.ApiKey))
         {
-            // Dev deterministic in-memory vector embedding (1536 float elements)
-            return GenerateDeterministicEmbedding(text, 1536);
+            return GenerateDeterministicEmbedding(text, 768);
         }
 
         try
         {
-            var client = new AzureOpenAIClient(new Uri(opt.Endpoint), new AzureKeyCredential(opt.ApiKey));
-            var embeddingClient = client.GetEmbeddingClient(opt.EmbeddingDeployment);
-            var response = await embeddingClient.GenerateEmbeddingAsync(text, cancellationToken: ct);
-            return response.Value.ToFloats().ToArray();
+            var client = _httpClientFactory.CreateClient("GoogleGeminiClient");
+            var embeddingModel = "text-embedding-004";
+            var requestUrl = $"https://generativelanguage.googleapis.com/v1beta/models/{embeddingModel}:embedContent?key={opt.ApiKey}";
+
+            var requestPayload = new
+            {
+                model = $"models/{embeddingModel}",
+                content = new
+                {
+                    parts = new[]
+                    {
+                        new { text }
+                    }
+                }
+            };
+
+            var jsonBody = JsonSerializer.Serialize(requestPayload);
+            using var content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+
+            var response = await client.PostAsync(requestUrl, content, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Google Gemini embedding API returned status {StatusCode}. Using fallback.", response.StatusCode);
+                return GenerateDeterministicEmbedding(text, 768);
+            }
+
+            var responseJson = await response.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(responseJson);
+
+            if (doc.RootElement.TryGetProperty("embedding", out var embeddingProp) &&
+                embeddingProp.TryGetProperty("values", out var valuesProp))
+            {
+                var list = new List<float>();
+                foreach (var element in valuesProp.EnumerateArray())
+                {
+                    list.Add(element.GetSingle());
+                }
+                return list.ToArray();
+            }
+
+            return GenerateDeterministicEmbedding(text, 768);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Azure OpenAI embedding request failed. Generating fallback vector representation.");
-            return GenerateDeterministicEmbedding(text, 1536);
+            _logger.LogWarning(ex, "Google Gemini embedding request failed. Generating fallback vector representation.");
+            return GenerateDeterministicEmbedding(text, 768);
         }
     }
 
@@ -59,7 +103,7 @@ public sealed class EmbeddingService : IEmbeddingService
             norm += vector[i] * vector[i];
         }
 
-        norm = MathF.Sqrt(norm);
+        norm = (float)Math.Sqrt(norm);
         if (norm > 0)
         {
             for (int i = 0; i < dimensions; i++)

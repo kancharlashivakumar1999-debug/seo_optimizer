@@ -40,11 +40,6 @@ public static class ServiceCollectionExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
-        services.AddOptions<AzureAISearchOptions>()
-            .Bind(configuration.GetSection(AzureAISearchOptions.SectionName))
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
-
         services.AddOptions<TrackingOptions>()
             .Bind(configuration.GetSection(TrackingOptions.SectionName))
             .ValidateDataAnnotations()
@@ -115,11 +110,13 @@ public static class ServiceCollectionExtensions
 
         // Embeddings, Vector Store & RAG Analysis
         services.AddSingleton<IEmbeddingService, EmbeddingService>();
-        services.AddSingleton<IVectorStore, InMemoryVectorStore>();
+        services.AddScoped<IVectorStore, PostgresVectorStore>();
         services.AddScoped<IRagAnalysisService, RagAnalysisService>();
 
-        // Repositories
-        services.AddSingleton<ITaskRepository, TaskRepository>();
+        // Database & Repositories (PostgreSQL + Dapper)
+        services.AddSingleton<Infrastructure.Data.IDbConnectionFactory, Infrastructure.Data.NpgsqlConnectionFactory>();
+        services.AddScoped<ISeoAuditRepository, PostgresSeoAuditRepository>();
+        services.AddScoped<ITaskRepository, PostgresSeoAuditRepository>();
 
         return services;
     }
