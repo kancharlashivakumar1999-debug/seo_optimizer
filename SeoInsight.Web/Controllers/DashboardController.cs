@@ -5,6 +5,7 @@ using SeoInsight.Web.Models.Database;
 using SeoInsight.Web.Models.Domain;
 using SeoInsight.Web.Models.Dtos;
 using SeoInsight.Web.Repositories.Interfaces;
+using SeoInsight.Web.Services.Implementations;
 using SeoInsight.Web.Services.Interfaces;
 
 namespace SeoInsight.Web.Controllers;
@@ -174,14 +175,76 @@ public class DashboardController : Controller
         {
             foreach (var loc in request.Locations)
             {
-                // 1. Fetch live SERP
-                var serp = await _serpService.GetSerpAsync(kw, loc, ct);
+                // 1. Fetch live SERP with pagination loop up to 5 pages
+                // Normalize target website/domain for matching
+                string normalizedTarget = request.Website.Trim().ToLowerInvariant()
+                    .Replace("https://", "")
+                    .Replace("http://", "")
+                    .Replace("www.", "")
+                    .TrimEnd('/');
+
+                SerpResult serp = null!;
+                SerpItem? ownItem = null;
+                var allOrganicResults = new List<SerpItem>();
+                var allPaa = new List<string>();
+
+                for (int page = 1; page <= 5; page++)
+                {
+                    var pageSerp = await _serpService.GetSerpAsync(kw, loc, page, ct);
+                    if (serp == null)
+                    {
+                        serp = pageSerp;
+                    }
+
+                    if (pageSerp.PeopleAlsoAsk.Count > 0)
+                    {
+                        foreach (var paa in pageSerp.PeopleAlsoAsk)
+                        {
+                            if (!allPaa.Contains(paa)) allPaa.Add(paa);
+                        }
+                    }
+
+                    foreach (var item in pageSerp.OrganicResults)
+                    {
+                        string itemDomain = (item.Domain ?? "").Trim().ToLowerInvariant().Replace("www.", "");
+                        string itemUrl = (item.Url ?? "").Trim().ToLowerInvariant();
+
+                        bool isMatch = (!string.IsNullOrEmpty(normalizedTarget) &&
+                                       (itemDomain.Contains(normalizedTarget, StringComparison.OrdinalIgnoreCase) ||
+                                        itemUrl.Contains(normalizedTarget, StringComparison.OrdinalIgnoreCase)));
+
+                        if (isMatch)
+                        {
+                            item.IsOwnDomain = true;
+                            if (ownItem == null)
+                            {
+                                ownItem = item;
+                            }
+                        }
+
+                        allOrganicResults.Add(item);
+                    }
+
+                    // Check if target website is found in this page
+                    if (ownItem != null)
+                    {
+                        _logger.LogInformation("Found target website '{Target}' at position {Pos} on SERP page {Page} for keyword '{Keyword}'",
+                            request.Website, ownItem.Position, page, kw);
+                        break;
+                    }
+
+                    // If fewer results returned than requested depth, reached end of SERP
+                    if (pageSerp.OrganicResults.Count == 0)
+                    {
+                        break;
+                    }
+                }
+
+                // Attach consolidated organic results and PAA
+                serp.OrganicResults = allOrganicResults;
+                serp.PeopleAlsoAsk = allPaa;
 
                 // 2. Identify target rank
-                var ownItem = serp.OrganicResults.FirstOrDefault(r =>
-                    r.Domain.Contains(request.Website, StringComparison.OrdinalIgnoreCase) ||
-                    r.Url.Contains(request.Website, StringComparison.OrdinalIgnoreCase));
-
                 int? rank = ownItem?.Position;
 
                 var kwResult = new KeywordRunResult
@@ -195,8 +258,8 @@ public class DashboardController : Controller
                 };
                 report.KeywordResults.Add(kwResult);
 
-                // 3. Add competitors linked to runId
-                foreach (var comp in serp.OrganicResults.Take(10))
+                // 3. Add competitors linked to runId (up to top 10 unique positions from traversed pages)
+                foreach (var comp in serp.OrganicResults.OrderBy(c => c.Position).Take(10))
                 {
                     competitorsToSave.Add(new SerpCompetitorEntity
                     {
@@ -218,7 +281,7 @@ public class DashboardController : Controller
 
                 // 4. Scrape competitor content and chunk into Vector Store
                 var ingestedChunks = new List<RagChunkDto>();
-                foreach (var competitor in serp.OrganicResults.Take(3)) // Top 3 competitors
+                foreach (var competitor in serp.OrganicResults.OrderBy(c => c.Position).Take(3)) // Top 3 competitors
                 {
                     var page = await _scraperService.ScrapeAsync(competitor.Url, ct);
                     string source = competitor.IsOwnDomain ? "own" : "competitor";
@@ -243,6 +306,19 @@ public class DashboardController : Controller
                 }
 
                 // 5. Create RAG Input DTO (with run_id and task_id)
+                var topCompetitorDtos = serp.OrganicResults.OrderBy(c => c.Position).Take(10).Select(c => new RagCompetitorItemDto
+                {
+                    Position = c.Position,
+                    Domain = c.Domain,
+                    Url = c.Url,
+                    Title = c.Title,
+                    Snippet = c.Snippet,
+                    WhyItRanks = c.Position <= 3
+                        ? "Dominant topical authority with top keyword placement and brand trust."
+                        : "Solid content depth and relevant keyword targeting matching query intent.",
+                    IsTargetSite = c.IsOwnDomain || (rank.HasValue && c.Position == rank.Value)
+                }).ToList();
+
                 var ragInput = new RagInputDto
                 {
                     RunId = runId.ToString(),
@@ -252,22 +328,12 @@ public class DashboardController : Controller
                     TargetWebsite = request.Website,
                     OwnRankPosition = rank,
                     PeopleAlsoAsk = serp.PeopleAlsoAsk,
-                    TopCompetitors = serp.OrganicResults.Take(10).Select(c => new RagCompetitorItemDto
-                    {
-                        Position = c.Position,
-                        Domain = c.Domain,
-                        Url = c.Url,
-                        Title = c.Title,
-                        Snippet = c.Snippet,
-                        WhyItRanks = c.Position <= 3
-                            ? "High authority domain, dedicated topic page, strong reviews & mentions."
-                            : "Good topical relevance, keyword presence in title and headers.",
-                        IsTargetSite = c.IsOwnDomain || (rank.HasValue && c.Position == rank.Value)
-                    }).ToList(),
+                    TopCompetitors = topCompetitorDtos,
                     IngestedChunks = ingestedChunks,
-                    SystemPrompt = "You are an SEO optimization assistant. Use ONLY provided context to generate recommendations in JSON.",
-                    UserPrompt = $"Optimize target website '{request.Website}' for keyword '{kw}' in '{loc}'. Current rank: {(rank.HasValue ? "#" + rank.Value : "Not found in top 10")}."
+                    SystemPrompt = "Principal Technical SEO & AI Search Specialist",
+                    UserPrompt = string.Empty
                 };
+                ragInput.UserPrompt = RagAnalysisService.BuildPrompt(ragInput);
 
                 allRagInputs.Add(ragInput);
 

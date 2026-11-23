@@ -505,7 +505,9 @@ function renderAnalysisOutput(data) {
   const actionPlan = prop(mods, "actionPlan") || [];
 
   const curPos = prop(target, "currentPosition") ?? prop(rankPred, "baselinePosition") ?? "–";
+  const curPosDisplay = String(curPos).includes("+") || String(curPos).includes("50") ? curPos : `#${curPos}`;
   const projPos = prop(rankPred, "projectedPosition") ?? "–";
+  const projPosDisplay = projPos !== "–" && !String(projPos).startsWith("#") ? `#${projPos}` : projPos;
   const intentFit = prop(target, "currentIntentFit") || "Moderate";
   const conf = prop(rankPred, "confidenceScore");
   const confText = typeof conf === 'number' ? (conf * 100).toFixed(0) + "%" : "–";
@@ -523,12 +525,12 @@ function renderAnalysisOutput(data) {
       <div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px;">
         <h3 class="h3" style="color:var(--up);margin-bottom:6px;">Rank Prediction Impact</h3>
         <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px;">
-          <div><span style="font-size:11.5px;color:var(--ink-3);">Current</span><div style="font-size:20px;font-weight:800;">#${curPos}</div></div>
+          <div><span style="font-size:11.5px;color:var(--ink-3);">Current</span><div style="font-size:20px;font-weight:800;">${curPosDisplay}</div></div>
           <div>${icons.arrow}</div>
-          <div><span style="font-size:11.5px;color:var(--ink-3);">Projected</span><div style="font-size:20px;font-weight:800;color:var(--up);">#${projPos}</div></div>
-          <div style="margin-left:auto;"><span class="pill up">${esc(prop(rankPred, "projectedRange") || "Projected Top 5")}</span></div>
+          <div><span style="font-size:11.5px;color:var(--ink-3);">Projected</span><div style="font-size:20px;font-weight:800;color:var(--up);">${projPosDisplay}</div></div>
+          <div style="margin-left:auto;"><span class="pill up">${esc(prop(rankPred, "projectedRange") || "Projected Range")}</span></div>
         </div>
-        <p style="margin:0;font-size:12.5px;color:var(--ink-2);"><strong>Timeline:</strong> ${esc(prop(rankPred, "timelineWeeks") || "4 to 6 weeks")} | <strong>Confidence:</strong> ${confText}</p>
+        <p style="margin:0;font-size:12.5px;color:var(--ink-2);"><strong>Timeline:</strong> ${esc(prop(rankPred, "timelineWeeks") || "–")} | <strong>Confidence:</strong> ${confText}</p>
       </div>
     </div>
 

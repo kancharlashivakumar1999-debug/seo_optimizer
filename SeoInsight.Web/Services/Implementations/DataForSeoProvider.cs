@@ -32,6 +32,11 @@ public sealed class DataForSeoProvider : ISerpProvider
 
     public async Task<SerpResult> FetchSerpAsync(string keyword, string location, CancellationToken ct = default)
     {
+        return await FetchSerpAsync(keyword, location, 1, ct);
+    }
+
+    public async Task<SerpResult> FetchSerpAsync(string keyword, string location, int page, CancellationToken ct = default)
+    {
         var opt = _options.Value;
         var result = new SerpResult
         {

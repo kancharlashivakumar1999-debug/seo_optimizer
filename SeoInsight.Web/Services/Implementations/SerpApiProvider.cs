@@ -33,6 +33,11 @@ public sealed class SerpApiProvider : ISerpProvider
 
     public async Task<SerpResult> FetchSerpAsync(string keyword, string location, CancellationToken ct = default)
     {
+        return await FetchSerpAsync(keyword, location, 1, ct);
+    }
+
+    public async Task<SerpResult> FetchSerpAsync(string keyword, string location, int page, CancellationToken ct = default)
+    {
         var opt = _options.Value;
         var result = new SerpResult
         {
@@ -50,15 +55,24 @@ public sealed class SerpApiProvider : ISerpProvider
 
         var client = _httpClientFactory.CreateClient("SerpApiClient");
 
+        int depth = opt.ResultsDepth > 0 ? opt.ResultsDepth : 10;
+        int start = Math.Max(0, (page - 1) * depth);
+
         // Construct live SerpApi Google search URL
         var queryParams = new Dictionary<string, string>
         {
             ["engine"] = "google",
             ["q"] = keyword,
             ["api_key"] = apiKey,
-            ["num"] = opt.ResultsDepth.ToString(),
+            ["num"] = depth.ToString(),
+            ["start"] = start.ToString(),
             ["device"] = opt.Device
         };
+
+        if (page > 1)
+        {
+            queryParams["page"] = page.ToString();
+        }
 
         if (!string.IsNullOrWhiteSpace(location))
         {
@@ -111,7 +125,7 @@ public sealed class SerpApiProvider : ISerpProvider
         // 3. Extract Organic Results (Live top rankings)
         if (root.TryGetProperty("organic_results", out var organicResults))
         {
-            int fallbackPos = 1;
+            int fallbackPos = start + 1;
             foreach (var item in organicResults.EnumerateArray())
             {
                 var link = item.TryGetProperty("link", out var l) ? l.GetString() ?? "" : "";
@@ -121,6 +135,12 @@ public sealed class SerpApiProvider : ISerpProvider
                 int position = item.TryGetProperty("position", out var pos) && pos.ValueKind == JsonValueKind.Number
                     ? pos.GetInt32()
                     : fallbackPos++;
+
+                // Ensure position reflects page offset if SerpApi returned 1-based index per page
+                if (position <= depth && page > 1)
+                {
+                    position += start;
+                }
 
                 string domain = "";
                 if (item.TryGetProperty("displayed_link", out var dl))
