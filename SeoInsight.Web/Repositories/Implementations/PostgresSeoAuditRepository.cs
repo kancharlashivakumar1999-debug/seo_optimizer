@@ -214,7 +214,7 @@ public sealed class PostgresSeoAuditRepository : ISeoAuditRepository, ITaskRepos
                 {
                     list.Add(new RunReport
                     {
-                        Id = r.RunId.ToString("N"),
+                        Id = r.RunId.ToString(),
                         TaskName = t.TaskName,
                         Website = t.TargetWebsite,
                         StartedAtUtc = r.StartedAt,

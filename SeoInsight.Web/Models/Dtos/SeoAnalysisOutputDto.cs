@@ -1,3 +1,6 @@
+using System.Text.Json.Serialization;
+using SeoInsight.Web.Infrastructure.Data;
+
 namespace SeoInsight.Web.Models.Dtos;
 
 public sealed class SeoAnalysisOutputDto
@@ -13,6 +16,8 @@ public sealed class TargetAnalysisDto
 {
     public string TargetUrl { get; set; } = string.Empty;
     public string TargetKeyword { get; set; } = string.Empty;
+
+    [JsonConverter(typeof(FlexibleDoubleConverter))]
     public double CurrentPosition { get; set; }
     public string CurrentIntentFit { get; set; } = "Moderate"; // Poor | Moderate | High
     public string OverallDrawbackSummary { get; set; } = string.Empty;
@@ -68,11 +73,18 @@ public sealed class ActionPlanItemDto
 
 public sealed class RankPredictionDto
 {
+    [JsonConverter(typeof(FlexibleDoubleConverter))]
     public double BaselinePosition { get; set; }
+
+    [JsonConverter(typeof(FlexibleDoubleConverter))]
     public double ProjectedPosition { get; set; }
+
     public string ProjectedRange { get; set; } = string.Empty;
     public string TimelineWeeks { get; set; } = string.Empty;
+
+    [JsonConverter(typeof(FlexibleDoubleConverter))]
     public double ConfidenceScore { get; set; }
+
     public List<string> PrimaryRankingDrivers { get; set; } = [];
     public List<string> RisksOrDependencies { get; set; } = [];
 }

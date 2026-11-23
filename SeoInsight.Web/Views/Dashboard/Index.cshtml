@@ -213,11 +213,20 @@ async function saveTask(t){
   if(idx>=0) tasks[idx]=t; else tasks.unshift(t);
 
   try {
-    await fetch("/Dashboard/SaveTask", {
+    const res = await fetch("/Dashboard/SaveTask", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(t)
     });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.taskId) {
+        t.id = data.taskId;
+        if (idx >= 0) {
+          tasks[idx].id = data.taskId;
+        }
+      }
+    }
   } catch(e){}
 }
 
@@ -289,6 +298,7 @@ async function executeLiveRun(t,note,implemented){
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        taskId: t.id,
         taskName: t.name,
         website: t.website,
         keywords: t.keywords,
@@ -680,7 +690,7 @@ function renderTasks(){
       <div style="min-width:0"><div class="t-name">${esc(t.name)}</div><div class="t-site">${esc(t.website)} – ${(t.runs||[]).length} run(s)</div></div>
       <div class="c-loc chips">${(t.locations||[]).map(l=>`<span class="chip">${esc(l)}</span>`).join("")}</div>
       <div class="c-kw">${(t.keywords||[]).length}</div>
-      <div class="c-last"><span class="big-rank">${L?fmtRank(runAvg(L)):"–"}</span></div>
+      <div class="c-last"><span class="big-rank">${L?fmtRank(runAvg(L)):"–"}</span></div> 
       <div><button class="btn sm" data-go="${t.id}">View Details</button></div>
     </div>`}).join("")}
   </div>`:emptyState()}`;
@@ -942,7 +952,7 @@ $("#saveTask").onclick=async()=>{
   if(!locTags.length){toast("Add at least one location");return $("#locIn").focus()}
 
   const t={
-    id: editId || uid(),
+    id: editId || "",
     name: name || site,
     website: site,
     keywords: [...new Set(kwTags)],
@@ -951,9 +961,9 @@ $("#saveTask").onclick=async()=>{
     runs: []
   };
 
-  saveTask(t);
+  await saveTask(t);
   closeModals();
-  toast("Task created successfully");
+  toast(editId ? "Task updated successfully" : "Task created successfully");
 
   // Immediate UI update to tasks view
   location.hash="tasks";

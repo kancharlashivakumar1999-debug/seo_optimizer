@@ -2,6 +2,7 @@ namespace SeoInsight.Web.Models.Dtos;
 
 public sealed class RunTaskRequest
 {
+    public string? TaskId { get; set; }
     public string TaskName { get; set; } = string.Empty;
     public string Website { get; set; } = string.Empty;
     public List<string> Keywords { get; set; } = [];

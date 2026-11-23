@@ -87,26 +87,50 @@ public class DashboardController : Controller
         _logger.LogInformation("Executing live SERP fetch and RAG Input preparation for website: {Website}", request.Website);
 
         // Ensure task exists in DB or find matching task
-        var allTasks = await _auditRepository.GetAllTasksAsync(ct);
-        var existingTask = allTasks.FirstOrDefault(t =>
-            t.TargetWebsite.Equals(request.Website, StringComparison.OrdinalIgnoreCase) ||
-            t.TaskName.Equals(request.TaskName, StringComparison.OrdinalIgnoreCase));
-
-        Guid taskId = existingTask?.TaskId ?? DbConstants.NewUuidV7();
-        if (existingTask == null)
+        Guid taskId = Guid.Empty;
+        if (!string.IsNullOrWhiteSpace(request.TaskId) && Guid.TryParse(request.TaskId, out var parsedTaskId))
         {
-            var newTask = new AuditTaskEntity
+            taskId = parsedTaskId;
+            var existingTask = await _auditRepository.GetTaskByIdAsync(taskId, ct);
+            if (existingTask == null)
             {
-                TaskId = taskId,
-                TaskName = string.IsNullOrWhiteSpace(request.TaskName) ? request.Website : request.TaskName,
-                TargetWebsite = request.Website,
-                TargetKeywordsJson = JsonSerializer.Serialize(request.Keywords),
-                TargetLocationsJson = JsonSerializer.Serialize(request.Locations),
-                Status = "Active",
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-            await _auditRepository.SaveTaskAsync(newTask, ct);
+                var newTask = new AuditTaskEntity
+                {
+                    TaskId = taskId,
+                    TaskName = string.IsNullOrWhiteSpace(request.TaskName) ? request.Website : request.TaskName,
+                    TargetWebsite = request.Website,
+                    TargetKeywordsJson = JsonSerializer.Serialize(request.Keywords),
+                    TargetLocationsJson = JsonSerializer.Serialize(request.Locations),
+                    Status = "Active",
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                await _auditRepository.SaveTaskAsync(newTask, ct);
+            }
+        }
+        else
+        {
+            var allTasks = await _auditRepository.GetAllTasksAsync(ct);
+            var existingTask = allTasks.FirstOrDefault(t =>
+                t.TargetWebsite.Equals(request.Website, StringComparison.OrdinalIgnoreCase) ||
+                t.TaskName.Equals(request.TaskName, StringComparison.OrdinalIgnoreCase));
+
+            taskId = existingTask?.TaskId ?? DbConstants.NewUuidV7();
+            if (existingTask == null)
+            {
+                var newTask = new AuditTaskEntity
+                {
+                    TaskId = taskId,
+                    TaskName = string.IsNullOrWhiteSpace(request.TaskName) ? request.Website : request.TaskName,
+                    TargetWebsite = request.Website,
+                    TargetKeywordsJson = JsonSerializer.Serialize(request.Keywords),
+                    TargetLocationsJson = JsonSerializer.Serialize(request.Locations),
+                    Status = "Active",
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                await _auditRepository.SaveTaskAsync(newTask, ct);
+            }
         }
 
         // Generate isolated execution run_id (UUIDv7)
@@ -115,7 +139,7 @@ public class DashboardController : Controller
 
         var report = new RunReport
         {
-            Id = runId.ToString("N"),
+            Id = runId.ToString(),
             TaskName = string.IsNullOrWhiteSpace(request.TaskName) ? request.Website : request.TaskName,
             Website = request.Website,
             Note = request.Note,
@@ -221,8 +245,8 @@ public class DashboardController : Controller
                 // 5. Create RAG Input DTO (with run_id and task_id)
                 var ragInput = new RagInputDto
                 {
-                    RunId = runId.ToString("N"),
-                    TaskId = taskId.ToString("N"),
+                    RunId = runId.ToString(),
+                    TaskId = taskId.ToString(),
                     Keyword = kw,
                     Location = loc,
                     TargetWebsite = request.Website,
@@ -304,8 +328,8 @@ public class DashboardController : Controller
         return Ok(new
         {
             success = true,
-            runId = runId.ToString("N"),
-            taskId = taskId.ToString("N"),
+            runId = runId.ToString(),
+            taskId = taskId.ToString(),
             report,
             ragInputs = allRagInputs
         });
