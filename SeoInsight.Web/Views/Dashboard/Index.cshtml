@@ -188,6 +188,15 @@ async function syncFromDb(){
           let loc = [];
           try { loc = JSON.parse(t.targetLocationsJson || "[]"); } catch(e){}
 
+          const initialRuns = [];
+          if (t.totalRuns > 0) {
+            initialRuns.push({
+              avgRank: t.latestAverageRank,
+              score: 0,
+              at: new Date(t.updatedAt || t.createdAt).getTime()
+            });
+          }
+
           dbTasks.push({
             id: t.taskId,
             name: t.taskName || t.targetWebsite,
@@ -195,7 +204,8 @@ async function syncFromDb(){
             keywords: kw.length ? kw : ["General SEO"],
             locations: loc.length ? loc : ["Global"],
             prompt: t.promptTemplate || DEFAULT_PROMPT,
-            runs: []
+            latestRank: t.latestAverageRank,
+            runs: initialRuns
           });
         }
         if(dbTasks.length) {
@@ -210,6 +220,8 @@ async function syncFromDb(){
 
 async function saveTask(t){
   const idx=tasks.findIndex(x=>x.id===t.id);
+  const existingRuns = idx >= 0 ? tasks[idx].runs || [] : [];
+  t.runs = existingRuns;
   if(idx>=0) tasks[idx]=t; else tasks.unshift(t);
 
   try {
@@ -226,8 +238,14 @@ async function saveTask(t){
           tasks[idx].id = data.taskId;
         }
       }
+      return true;
+    } else {
+      throw new Error("HTTP " + res.status);
     }
-  } catch(e){}
+  } catch(e){
+    toast("Failed to save task: " + e.message, true);
+    return false;
+  }
 }
 
 async function saveRun(t,r){
@@ -256,12 +274,31 @@ function setStatus(){
 }
 
 /* ---------- metrics ---------- */
-const runAvg=r=>{const v=(r.results||[]).map(x=>x.rank??NF);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null};
-const foundAvg=r=>{if(!r)return null;const v=(r.results||[]).filter(x=>x.rank!=null).map(x=>x.rank);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null};
-const lastRun=t=>t.runs&&t.runs.length?t.runs[t.runs.length-1]:null;
-const prevRun=t=>t.runs&&t.runs.length>1?t.runs[t.runs.length-2]:null;
-const fmtRank=r=>r==null?"–":(Math.round(r*10)/10).toString();
-function rankBadge(r){if(r==null)return'<span class="rank nf">Not found</span>';const n=Math.round(r);return`<span class="rank ${n<=3?"t3":n<=10?"t10":""}">${fmtRank(r)}</span>`}
+const runAvg=r=>{
+  if(!r) return null;
+  if(r.avgRank != null) return r.avgRank;
+  const found = (r.results||[]).filter(x=>x.rank!=null).map(x=>x.rank);
+  if(found.length) return found.reduce((a,b)=>a+b,0)/found.length;
+  const v=(r.results||[]).map(x=>x.rank);
+  return v.length ? null : null;
+};
+const foundAvg=r=>{if(!r)return null;if(r.avgRank!=null)return r.avgRank;const v=(r.results||[]).filter(x=>x.rank!=null).map(x=>x.rank);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null};
+const lastRun=t=>t.runs&&t.runs.length?t.runs[0] || t.runs[t.runs.length-1]:null;
+const prevRun=t=>t.runs&&t.runs.length>1?t.runs[1] || t.runs[t.runs.length-2]:null;
+const fmtRank=r=>{
+  if(r==null) return "–";
+  const num = typeof r === "number" ? r : parseFloat(r);
+  if(isNaN(num)) return "–";
+  if(num >= 101) return "100+";
+  return (Math.round(num*10)/10).toString();
+};
+function rankBadge(r){
+  if(r==null)return'<span class="rank nf">Not found</span>';
+  const num=typeof r==="number"?r:parseFloat(r);
+  if(isNaN(num)||num>=101)return'<span class="rank nf">100+</span>';
+  const n=Math.round(num);
+  return`<span class="rank ${n<=3?"t3":n<=10?"t10":""}">${fmtRank(num)}</span>`;
+}
 function deltaPill(prev,cur){
   if(prev==null&&cur==null)return'<span class="pill flat">–</span>';
   if(prev==null)return'<span class="pill up">New</span>';
@@ -690,7 +727,7 @@ function renderTasks(){
       <div style="min-width:0"><div class="t-name">${esc(t.name)}</div><div class="t-site">${esc(t.website)} – ${(t.runs||[]).length} run(s)</div></div>
       <div class="c-loc chips">${(t.locations||[]).map(l=>`<span class="chip">${esc(l)}</span>`).join("")}</div>
       <div class="c-kw">${(t.keywords||[]).length}</div>
-      <div class="c-last"><span class="big-rank">${L?fmtRank(runAvg(L)):"–"}</span></div> 
+      <div class="c-last"><span class="big-rank">${rankBadge(L ? runAvg(L) : t.latestRank)}</span></div> 
       <div><button class="btn sm" data-go="${t.id}">View Details</button></div>
     </div>`}).join("")}
   </div>`:emptyState()}`;
@@ -707,6 +744,17 @@ async function renderDetail(t){
     const res = await fetch("/Dashboard/GetTaskDetail?id=" + encodeURIComponent(current.id));
     if (res.ok) {
       const data = await res.json();
+      if (data.task) {
+        let kw = [];
+        try { kw = JSON.parse(data.task.targetKeywordsJson || "[]"); } catch(e){}
+        let loc = [];
+        try { loc = JSON.parse(data.task.targetLocationsJson || "[]"); } catch(e){}
+        current.name = data.task.taskName || current.name;
+        current.website = data.task.targetWebsite || current.website;
+        current.prompt = data.task.promptTemplate || current.prompt;
+        current.keywords = kw.length ? kw : current.keywords;
+        current.locations = loc.length ? loc : current.locations;
+      }
       if (data.runs && data.runs.length) {
         runs = data.runs.map((r, idx) => ({
           id: r.runId,
@@ -739,7 +787,7 @@ async function renderDetail(t){
       </div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn" onclick="openTaskModal(tasks.find(x=>x.id==='${current.id}'))">Edit Task</button>
+      <button class="btn" data-edit="${current.id}">Edit Task</button>
       <button class="btn danger" data-del="${current.id}">Delete</button>
       <button class="btn primary" data-run="${current.id}">
         ${icons.play}${hasRuns ? "Run again" : "Run now"}
@@ -951,6 +999,7 @@ $("#saveTask").onclick=async()=>{
   if(!kwTags.length){toast("Add at least one keyword");return $("#kwIn").focus()}
   if(!locTags.length){toast("Add at least one location");return $("#locIn").focus()}
 
+  const currentRuns = (editId && tasks.find(x=>x.id===editId)?.runs) || [];
   const t={
     id: editId || "",
     name: name || site,
@@ -958,16 +1007,22 @@ $("#saveTask").onclick=async()=>{
     keywords: [...new Set(kwTags)],
     locations: [...new Set(locTags)],
     prompt: prompt,
-    runs: []
+    runs: currentRuns
   };
 
-  await saveTask(t);
-  closeModals();
-  toast(editId ? "Task updated successfully" : "Task created successfully");
+  const saved = await saveTask(t);
+  if (saved) {
+    closeModals();
+    toast(editId ? "Task updated successfully" : "Task created successfully");
 
-  // Immediate UI update to tasks view
-  location.hash="tasks";
-  route();
+    // Refresh view
+    if (editId && location.hash.startsWith("#task-")) {
+      renderDetail(t);
+    } else {
+      location.hash="tasks";
+      route();
+    }
+  }
 };
 
 /* ---------- run modal ---------- */
@@ -1008,6 +1063,14 @@ $$("[data-close]").forEach(b=>b.onclick=closeModals);
 /* ---------- Global clicks ---------- */
 document.addEventListener("click",e=>{
   if(e.target.closest("[data-new]")){openTaskModal();return}
+  const ed=e.target.closest("[data-edit]");
+  if(ed){
+    e.stopPropagation();
+    const id=ed.dataset.edit;
+    const t=tasks.find(x=>x.id===id);
+    if(t) openTaskModal(t);
+    return;
+  }
   const sa=e.target.closest("#btnStartAnalyzing, [data-analyze]");
   if(sa){
     e.stopPropagation();
