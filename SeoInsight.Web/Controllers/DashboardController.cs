@@ -80,12 +80,22 @@ public class DashboardController : Controller
     [HttpPost]
     public async Task<IActionResult> RunSerpAnalysis([FromBody] RunTaskRequest request, CancellationToken ct)
     {
-        if (request == null || request.Keywords.Count == 0 || request.Locations.Count == 0)
+        // Resolve single target keyword and location from request
+        string kw = !string.IsNullOrWhiteSpace(request.Keyword) 
+            ? request.Keyword.Trim() 
+            : (request.Keywords.FirstOrDefault() ?? "").Trim();
+
+        string loc = !string.IsNullOrWhiteSpace(request.Location) 
+            ? request.Location.Trim() 
+            : (request.Locations.FirstOrDefault() ?? "").Trim();
+
+        if (string.IsNullOrWhiteSpace(kw) || string.IsNullOrWhiteSpace(loc))
         {
             return BadRequest(new { message = "Keyword and location are required." });
         }
 
-        _logger.LogInformation("Executing live SERP fetch and RAG Input preparation for website: {Website}", request.Website);
+        _logger.LogInformation("Executing live SERP fetch for website: {Website}, keyword: '{Keyword}', location: '{Location}'", 
+            request.Website, kw, loc);
 
         // Ensure task exists in DB or find matching task
         Guid taskId = Guid.Empty;
@@ -100,8 +110,10 @@ public class DashboardController : Controller
                     TaskId = taskId,
                     TaskName = string.IsNullOrWhiteSpace(request.TaskName) ? request.Website : request.TaskName,
                     TargetWebsite = request.Website,
-                    TargetKeywordsJson = JsonSerializer.Serialize(request.Keywords),
-                    TargetLocationsJson = JsonSerializer.Serialize(request.Locations),
+                    TargetKeyword = kw,
+                    TargetLocation = loc,
+                    TargetKeywordsJson = JsonSerializer.Serialize(new List<string> { kw }),
+                    TargetLocationsJson = JsonSerializer.Serialize(new List<string> { loc }),
                     Status = "Active",
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
@@ -124,8 +136,10 @@ public class DashboardController : Controller
                     TaskId = taskId,
                     TaskName = string.IsNullOrWhiteSpace(request.TaskName) ? request.Website : request.TaskName,
                     TargetWebsite = request.Website,
-                    TargetKeywordsJson = JsonSerializer.Serialize(request.Keywords),
-                    TargetLocationsJson = JsonSerializer.Serialize(request.Locations),
+                    TargetKeyword = kw,
+                    TargetLocation = loc,
+                    TargetKeywordsJson = JsonSerializer.Serialize(new List<string> { kw }),
+                    TargetLocationsJson = JsonSerializer.Serialize(new List<string> { loc }),
                     Status = "Active",
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
@@ -153,13 +167,15 @@ public class DashboardController : Controller
         {
             RunId = runId,
             TaskId = taskId,
+            TargetKeyword = kw,
+            TargetLocation = loc,
             RunNumber = 1,
             RunStatus = "Running",
             RunNote = request.Note,
             ImplementedChangesJson = JsonSerializer.Serialize(request.Implemented),
             VisibilityScore = 0,
             AverageRank = null,
-            TotalKeywordsChecked = request.Keywords.Count * request.Locations.Count,
+            TotalKeywordsChecked = 1,
             Top10Hits = 0,
             Summary = "Live SERP & RAG processing in progress",
             DurationSeconds = 0,
@@ -171,191 +187,227 @@ public class DashboardController : Controller
         var allRagInputs = new List<RagInputDto>();
         var competitorsToSave = new List<SerpCompetitorEntity>();
 
-        foreach (var kw in request.Keywords)
+        // 1. Fetch live SERP with pagination loop up to 5 pages for single (keyword, location)
+        string normalizedTarget = request.Website.Trim().ToLowerInvariant()
+            .Replace("https://", "")
+            .Replace("http://", "")
+            .Replace("www.", "")
+            .TrimEnd('/');
+
+        SerpResult serp = null!;
+        SerpItem? ownItem = null;
+        int? cumulativeOwnRank = null;
+        var allOrganicResults = new List<SerpItem>();
+        var allPaa = new List<string>();
+
+        for (int page = 1; page <= 5; page++)
         {
-            foreach (var loc in request.Locations)
+            SerpResult pageSerp;
+            try
             {
-                // 1. Fetch live SERP with pagination loop up to 5 pages
-                // Normalize target website/domain for matching
-                string normalizedTarget = request.Website.Trim().ToLowerInvariant()
-                    .Replace("https://", "")
-                    .Replace("http://", "")
-                    .Replace("www.", "")
-                    .TrimEnd('/');
+                pageSerp = await _serpService.GetSerpAsync(kw, loc, page, ct);
+            }
+            catch (Polly.Timeout.TimeoutRejectedException ex)
+            {
+                _logger.LogWarning(ex, "Timeout fetching SERP page {Page} for '{Keyword}' ({Location}). Continuing with gathered results.", page, kw, loc);
+                break;
+            }
+            catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+            {
+                _logger.LogWarning(ex, "Operation canceled while fetching SERP page {Page} for '{Keyword}' ({Location}). Continuing with gathered results.", page, kw, loc);
+                break;
+            }
+            catch (Exception ex) when (page > 1)
+            {
+                _logger.LogWarning(ex, "Failed to fetch SERP page {Page} for '{Keyword}' ({Location}). Continuing with gathered results.", page, kw, loc);
+                break;
+            }
 
-                SerpResult serp = null!;
-                SerpItem? ownItem = null;
-                var allOrganicResults = new List<SerpItem>();
-                var allPaa = new List<string>();
+            if (serp == null)
+            {
+                serp = pageSerp;
+            }
 
-                for (int page = 1; page <= 5; page++)
+            if (pageSerp.PeopleAlsoAsk.Count > 0)
+            {
+                foreach (var paa in pageSerp.PeopleAlsoAsk)
                 {
-                    var pageSerp = await _serpService.GetSerpAsync(kw, loc, page, ct);
-                    if (serp == null)
+                    if (!allPaa.Contains(paa)) allPaa.Add(paa);
+                }
+            }
+
+            int previousOrganicCount = allOrganicResults.Count;
+
+            for (int i = 0; i < pageSerp.OrganicResults.Count; i++)
+            {
+                var item = pageSerp.OrganicResults[i];
+                string itemDomain = (item.Domain ?? "").Trim().ToLowerInvariant().Replace("www.", "");
+                string itemUrl = (item.Url ?? "").Trim().ToLowerInvariant();
+
+                bool isMatch = (!string.IsNullOrEmpty(normalizedTarget) &&
+                               (itemDomain.Contains(normalizedTarget, StringComparison.OrdinalIgnoreCase) ||
+                                itemUrl.Contains(normalizedTarget, StringComparison.OrdinalIgnoreCase)));
+
+                if (isMatch)
+                {
+                    item.IsOwnDomain = true;
+                    if (ownItem == null)
                     {
-                        serp = pageSerp;
-                    }
-
-                    if (pageSerp.PeopleAlsoAsk.Count > 0)
-                    {
-                        foreach (var paa in pageSerp.PeopleAlsoAsk)
-                        {
-                            if (!allPaa.Contains(paa)) allPaa.Add(paa);
-                        }
-                    }
-
-                    foreach (var item in pageSerp.OrganicResults)
-                    {
-                        string itemDomain = (item.Domain ?? "").Trim().ToLowerInvariant().Replace("www.", "");
-                        string itemUrl = (item.Url ?? "").Trim().ToLowerInvariant();
-
-                        bool isMatch = (!string.IsNullOrEmpty(normalizedTarget) &&
-                                       (itemDomain.Contains(normalizedTarget, StringComparison.OrdinalIgnoreCase) ||
-                                        itemUrl.Contains(normalizedTarget, StringComparison.OrdinalIgnoreCase)));
-
-                        if (isMatch)
-                        {
-                            item.IsOwnDomain = true;
-                            if (ownItem == null)
-                            {
-                                ownItem = item;
-                            }
-                        }
-
-                        allOrganicResults.Add(item);
-                    }
-
-                    // Check if target website is found in this page
-                    if (ownItem != null)
-                    {
-                        _logger.LogInformation("Found target website '{Target}' at position {Pos} on SERP page {Page} for keyword '{Keyword}'",
-                            request.Website, ownItem.Position, page, kw);
-                        break;
-                    }
-
-                    // If fewer results returned than requested depth, reached end of SERP
-                    if (pageSerp.OrganicResults.Count == 0)
-                    {
-                        break;
+                        ownItem = item;
+                        // Calculate rank: previous organic results count + current page index (1-based)
+                        cumulativeOwnRank = previousOrganicCount + (i + 1);
+                        ownItem.Position = cumulativeOwnRank.Value;
                     }
                 }
 
-                // Attach consolidated organic results and PAA
-                serp.OrganicResults = allOrganicResults;
-                serp.PeopleAlsoAsk = allPaa;
+                allOrganicResults.Add(item);
 
-                // 2. Identify target rank
-                int? rank = ownItem?.Position;
-
-                var kwResult = new KeywordRunResult
+                // Stop immediately when target is matched
+                if (ownItem != null)
                 {
-                    Keyword = kw,
-                    Location = loc,
-                    Rank = rank,
-                    Hits = rank.HasValue ? 1 : 0,
-                    TotalSamples = 1,
-                    Top10 = serp.OrganicResults.Take(10).ToList()
-                };
-                report.KeywordResults.Add(kwResult);
-
-                // 3. Add competitors linked to runId (up to top 10 unique positions from traversed pages)
-                foreach (var comp in serp.OrganicResults.OrderBy(c => c.Position).Take(10))
-                {
-                    competitorsToSave.Add(new SerpCompetitorEntity
-                    {
-                        CompetitorId = DbConstants.NewUuidV7(),
-                        RunId = runId,
-                        TaskId = taskId,
-                        Keyword = kw,
-                        Location = loc,
-                        Position = comp.Position,
-                        Domain = comp.Domain,
-                        Title = comp.Title,
-                        Url = comp.Url,
-                        Snippet = comp.Snippet,
-                        SerpHighlights = comp.Snippet,
-                        IsTargetSite = comp.IsOwnDomain,
-                        CreatedAt = DateTime.UtcNow
-                    });
+                    break;
                 }
+            }
 
-                // 4. Scrape competitor content and chunk into Vector Store
-                var ingestedChunks = new List<RagChunkDto>();
-                foreach (var competitor in serp.OrganicResults.OrderBy(c => c.Position).Take(3)) // Top 3 competitors
-                {
-                    var page = await _scraperService.ScrapeAsync(competitor.Url, ct);
-                    string source = competitor.IsOwnDomain ? "own" : "competitor";
-                    var chunks = _chunkingService.ChunkPage(page, kw, source, competitor.Position);
+            // Check if target website is found in this page - exit outer pagination loop immediately
+            if (ownItem != null)
+            {
+                _logger.LogInformation("Found target website '{Target}' at position {Pos} on SERP page {Page} for keyword '{Keyword}'. Halting further SERP page calls and preparing RAG input.",
+                    request.Website, cumulativeOwnRank ?? ownItem.Position, page, kw);
+                break;
+            }
 
-                    // Set chunk ID and run ID
-                    foreach (var ch in chunks)
-                    {
-                        ch.Id = $"{runId:N}|{taskId:N}";
-                    }
-
-                    await _vectorStore.UpsertChunksAsync(chunks, ct);
-
-                    ingestedChunks.AddRange(chunks.Take(2).Select(c => new RagChunkDto
-                    {
-                        Source = c.Source,
-                        Domain = c.Domain,
-                        Heading = c.SectionHeading,
-                        Text = c.Content.Length > 200 ? c.Content[..200] + "..." : c.Content,
-                        RelevanceScore = 0.85
-                    }));
-                }
-
-                // 5. Create RAG Input DTO (with run_id and task_id)
-                var topCompetitorDtos = serp.OrganicResults.OrderBy(c => c.Position).Take(10).Select(c => new RagCompetitorItemDto
-                {
-                    Position = c.Position,
-                    Domain = c.Domain,
-                    Url = c.Url,
-                    Title = c.Title,
-                    Snippet = c.Snippet,
-                    WhyItRanks = c.Position <= 3
-                        ? "Dominant topical authority with top keyword placement and brand trust."
-                        : "Solid content depth and relevant keyword targeting matching query intent.",
-                    IsTargetSite = c.IsOwnDomain || (rank.HasValue && c.Position == rank.Value)
-                }).ToList();
-
-                var ragInput = new RagInputDto
-                {
-                    RunId = runId.ToString(),
-                    TaskId = taskId.ToString(),
-                    Keyword = kw,
-                    Location = loc,
-                    TargetWebsite = request.Website,
-                    OwnRankPosition = rank,
-                    PeopleAlsoAsk = serp.PeopleAlsoAsk,
-                    TopCompetitors = topCompetitorDtos,
-                    IngestedChunks = ingestedChunks,
-                    SystemPrompt = "Principal Technical SEO & AI Search Specialist",
-                    UserPrompt = string.Empty
-                };
-                ragInput.UserPrompt = RagAnalysisService.BuildPrompt(ragInput);
-
-                allRagInputs.Add(ragInput);
-
-                // Save RAG payload snapshot to database linked to run_id
-                await _auditRepository.SaveRagPayloadAsync(new RagInputPayloadEntity
-                {
-                    PayloadId = DbConstants.NewUuidV7(),
-                    RunId = runId,
-                    TaskId = taskId,
-                    TargetKeyword = kw,
-                    TargetLocation = loc,
-                    TargetWebsite = request.Website,
-                    OwnRankPosition = rank,
-                    TopCompetitorsJson = JsonSerializer.Serialize(ragInput.TopCompetitors),
-                    PeopleAlsoAskJson = JsonSerializer.Serialize(ragInput.PeopleAlsoAsk),
-                    IngestedChunksJson = JsonSerializer.Serialize(ragInput.IngestedChunks),
-                    SystemPrompt = ragInput.SystemPrompt,
-                    UserPrompt = ragInput.UserPrompt,
-                    CreatedAt = DateTime.UtcNow
-                }, ct);
+            // If fewer results returned than requested depth, reached end of SERP
+            if (pageSerp.OrganicResults.Count == 0)
+            {
+                break;
             }
         }
+
+        // Attach consolidated organic results and PAA
+        if (serp == null)
+        {
+            serp = new SerpResult
+            {
+                Keyword = kw,
+                Location = loc,
+                SearchEngine = "google",
+                FetchedAtUtc = DateTime.UtcNow
+            };
+        }
+        serp.OrganicResults = allOrganicResults;
+        serp.PeopleAlsoAsk = allPaa;
+
+        // 2. Identify target rank (based on previous page organic count + matching index on current page)
+        int? rank = cumulativeOwnRank ?? ownItem?.Position;
+
+        var kwResult = new KeywordRunResult
+        {
+            Keyword = kw,
+            Location = loc,
+            Rank = rank,
+            Hits = rank.HasValue ? 1 : 0,
+            TotalSamples = 1,
+            Top10 = serp.OrganicResults.Take(10).ToList()
+        };
+        report.KeywordResults.Add(kwResult);
+
+        // 3. Add competitors linked to runId (up to top 10 unique positions from traversed pages)
+        foreach (var comp in serp.OrganicResults.OrderBy(c => c.Position).Take(10))
+        {
+            competitorsToSave.Add(new SerpCompetitorEntity
+            {
+                CompetitorId = DbConstants.NewUuidV7(),
+                RunId = runId,
+                TaskId = taskId,
+                Keyword = kw,
+                Location = loc,
+                Position = comp.Position,
+                Domain = comp.Domain,
+                Title = comp.Title,
+                Url = comp.Url,
+                Snippet = comp.Snippet,
+                SerpHighlights = comp.Snippet,
+                IsTargetSite = comp.IsOwnDomain,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        // 4. Scrape competitor content and chunk into Vector Store
+        var ingestedChunks = new List<RagChunkDto>();
+        foreach (var competitor in serp.OrganicResults.OrderBy(c => c.Position).Take(3)) // Top 3 competitors
+        {
+            var page = await _scraperService.ScrapeAsync(competitor.Url, ct);
+            string source = competitor.IsOwnDomain ? "own" : "competitor";
+            var chunks = _chunkingService.ChunkPage(page, kw, source, competitor.Position);
+
+            // Set chunk ID and run ID
+            foreach (var ch in chunks)
+            {
+                ch.Id = $"{runId:N}|{taskId:N}";
+            }
+
+            await _vectorStore.UpsertChunksAsync(chunks, ct);
+
+            ingestedChunks.AddRange(chunks.Take(2).Select(c => new RagChunkDto
+            {
+                Source = c.Source,
+                Domain = c.Domain,
+                Heading = c.SectionHeading,
+                Text = c.Content.Length > 200 ? c.Content[..200] + "..." : c.Content,
+                RelevanceScore = 0.85
+            }));
+        }
+
+        // 5. Create RAG Input DTO (with run_id and task_id)
+        var topCompetitorDtos = serp.OrganicResults.OrderBy(c => c.Position).Take(10).Select(c => new RagCompetitorItemDto
+        {
+            Position = c.Position,
+            Domain = c.Domain,
+            Url = c.Url,
+            Title = c.Title,
+            Snippet = c.Snippet,
+            WhyItRanks = c.Position <= 3
+                ? "Dominant topical authority with top keyword placement and brand trust."
+                : "Solid content depth and relevant keyword targeting matching query intent.",
+            IsTargetSite = c.IsOwnDomain || (rank.HasValue && c.Position == rank.Value)
+        }).ToList();
+
+        var ragInput = new RagInputDto
+        {
+            RunId = runId.ToString(),
+            TaskId = taskId.ToString(),
+            Keyword = kw,
+            Location = loc,
+            TargetWebsite = request.Website,
+            OwnRankPosition = rank,
+            PeopleAlsoAsk = serp.PeopleAlsoAsk,
+            TopCompetitors = topCompetitorDtos,
+            IngestedChunks = ingestedChunks,
+            SystemPrompt = "Principal Technical SEO & AI Search Specialist",
+            UserPrompt = string.Empty
+        };
+        ragInput.UserPrompt = RagAnalysisService.BuildPrompt(ragInput);
+
+        allRagInputs.Add(ragInput);
+
+        // Save RAG payload snapshot to database linked to run_id
+        await _auditRepository.SaveRagPayloadAsync(new RagInputPayloadEntity
+        {
+            PayloadId = DbConstants.NewUuidV7(),
+            RunId = runId,
+            TaskId = taskId,
+            TargetKeyword = kw,
+            TargetLocation = loc,
+            TargetWebsite = request.Website,
+            OwnRankPosition = rank,
+            TopCompetitorsJson = JsonSerializer.Serialize(ragInput.TopCompetitors),
+            PeopleAlsoAskJson = JsonSerializer.Serialize(ragInput.PeopleAlsoAsk),
+            IngestedChunksJson = JsonSerializer.Serialize(ragInput.IngestedChunks),
+            SystemPrompt = ragInput.SystemPrompt,
+            UserPrompt = ragInput.UserPrompt,
+            CreatedAt = DateTime.UtcNow
+        }, ct);
 
         // Generate baseline visibility score
         int totalPairs = report.KeywordResults.Count;
@@ -504,6 +556,9 @@ public class DashboardController : Controller
             string website = task.TryGetProperty("website", out var wProp) ? wProp.GetString() ?? "" : "";
             string prompt = task.TryGetProperty("prompt", out var pProp) ? pProp.GetString() ?? "" : "";
 
+            string targetKeyword = task.TryGetProperty("keyword", out var kwSingleProp) ? kwSingleProp.GetString() ?? "" : "";
+            string targetLocation = task.TryGetProperty("location", out var locSingleProp) ? locSingleProp.GetString() ?? "" : "";
+
             var kwList = new List<string>();
             if (task.TryGetProperty("keywords", out var kwProp) && kwProp.ValueKind == JsonValueKind.Array)
             {
@@ -516,11 +571,31 @@ public class DashboardController : Controller
                 foreach (var el in locProp.EnumerateArray()) locList.Add(el.GetString() ?? "");
             }
 
+            if (string.IsNullOrWhiteSpace(targetKeyword))
+            {
+                targetKeyword = kwList.FirstOrDefault() ?? "";
+            }
+            if (string.IsNullOrWhiteSpace(targetLocation))
+            {
+                targetLocation = locList.FirstOrDefault() ?? "";
+            }
+
+            if (kwList.Count == 0 && !string.IsNullOrWhiteSpace(targetKeyword))
+            {
+                kwList.Add(targetKeyword);
+            }
+            if (locList.Count == 0 && !string.IsNullOrWhiteSpace(targetLocation))
+            {
+                locList.Add(targetLocation);
+            }
+
             var entity = new AuditTaskEntity
             {
                 TaskId = taskId,
                 TaskName = name,
                 TargetWebsite = website,
+                TargetKeyword = targetKeyword,
+                TargetLocation = targetLocation,
                 TargetKeywordsJson = JsonSerializer.Serialize(kwList),
                 TargetLocationsJson = JsonSerializer.Serialize(locList),
                 PromptTemplate = prompt,

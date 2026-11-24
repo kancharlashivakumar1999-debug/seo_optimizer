@@ -52,19 +52,21 @@ public static class ServiceCollectionExtensions
     {
         var retryPolicy = HttpPolicyExtensions
             .HandleTransientHttpError()
+            .Or<Polly.Timeout.TimeoutRejectedException>()
             .OrResult(msg => msg.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
             .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)));
 
-        var timeoutPolicy = Policy.TimeoutAsync<HttpResponseMessage>(TimeSpan.FromSeconds(30));
+        // Default outer timeout policy for general HTTP clients (180s)
+        var defaultTimeoutPolicy = Policy.TimeoutAsync<HttpResponseMessage>(TimeSpan.FromSeconds(180));
 
         services.AddHttpClient("ScraperClient", (sp, client) =>
         {
             var options = sp.GetRequiredService<IOptions<ScraperOptions>>().Value;
             client.DefaultRequestHeaders.UserAgent.ParseAdd(options.UserAgent);
-            client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+            client.Timeout = Timeout.InfiniteTimeSpan;
         })
         .AddPolicyHandler(retryPolicy)
-        .AddPolicyHandler(timeoutPolicy);
+        .AddPolicyHandler(defaultTimeoutPolicy);
 
         services.AddHttpClient("DataForSeoClient", (sp, client) =>
         {
@@ -73,25 +75,30 @@ public static class ServiceCollectionExtensions
             {
                 client.BaseAddress = new Uri(options.BaseUrl);
             }
-            client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+            client.Timeout = Timeout.InfiniteTimeSpan;
         })
         .AddPolicyHandler(retryPolicy)
-        .AddPolicyHandler(timeoutPolicy);
+        .AddPolicyHandler(defaultTimeoutPolicy);
 
         services.AddHttpClient("SerpApiClient", (sp, client) =>
         {
             var options = sp.GetRequiredService<IOptions<SerpOptions>>().Value;
-            client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+            client.Timeout = Timeout.InfiniteTimeSpan;
         })
         .AddPolicyHandler(retryPolicy)
-        .AddPolicyHandler(timeoutPolicy);
+        .AddPolicyHandler((sp, _) =>
+        {
+            var options = sp.GetRequiredService<IOptions<SerpOptions>>().Value;
+            var seconds = options.TimeoutSeconds > 0 ? options.TimeoutSeconds : 180;
+            return Policy.TimeoutAsync<HttpResponseMessage>(TimeSpan.FromSeconds(seconds));
+        });
 
         services.AddHttpClient("GoogleGeminiClient", (sp, client) =>
         {
-            client.Timeout = TimeSpan.FromSeconds(60);
+            client.Timeout = Timeout.InfiniteTimeSpan;
         })
         .AddPolicyHandler(retryPolicy)
-        .AddPolicyHandler(timeoutPolicy);
+        .AddPolicyHandler(Policy.TimeoutAsync<HttpResponseMessage>(TimeSpan.FromSeconds(180)));
 
         return services;
     }

@@ -5,6 +5,8 @@ public sealed class TaskSummaryProjection
     public Guid TaskId { get; set; }
     public string TaskName { get; set; } = string.Empty;
     public string TargetWebsite { get; set; } = string.Empty;
+    public string TargetKeyword { get; set; } = string.Empty;
+    public string TargetLocation { get; set; } = string.Empty;
     public string TargetKeywordsJson { get; set; } = "[]";
     public string TargetLocationsJson { get; set; } = "[]";
     public string? PromptTemplate { get; set; }

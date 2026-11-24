@@ -58,28 +58,31 @@ public sealed class SerpApiProvider : ISerpProvider
         int depth = opt.ResultsDepth > 0 ? opt.ResultsDepth : 10;
         int start = Math.Max(0, (page - 1) * depth);
 
-        // Construct live SerpApi Google search URL
-        var queryParams = new Dictionary<string, string>
+        // Construct live SerpApi Google search URL matching expected formation:
+        // engine=google&q=...&location=...&google_domain=google.co.in&gl=in&hl=en&device=desktop&no_cache=true&start=...&api_key=...
+        var queryParams = new List<KeyValuePair<string, string>>
         {
-            ["engine"] = "google",
-            ["q"] = keyword,
-            ["api_key"] = apiKey,
-            ["num"] = depth.ToString(),
-            ["start"] = start.ToString(),
-            ["device"] = opt.Device
+            new("engine", "google"),
+            new("q", keyword)
         };
-
-        if (page > 1)
-        {
-            queryParams["page"] = page.ToString();
-        }
 
         if (!string.IsNullOrWhiteSpace(location))
         {
-            queryParams["location"] = location;
+            queryParams.Add(new("location", location));
         }
 
-        var queryString = string.Join("&", queryParams.Select(kv => $"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(kv.Value)}"));
+        queryParams.Add(new("google_domain", "google.co.in"));
+        queryParams.Add(new("gl", !string.IsNullOrWhiteSpace(opt.Country) ? opt.Country.ToLowerInvariant() : "in"));
+        queryParams.Add(new("hl", !string.IsNullOrWhiteSpace(opt.Language) ? opt.Language : "en"));
+        queryParams.Add(new("device", !string.IsNullOrWhiteSpace(opt.Device) ? opt.Device : "desktop"));
+        queryParams.Add(new("no_cache", "true"));
+        queryParams.Add(new("start", start.ToString()));
+        queryParams.Add(new("api_key", apiKey));
+
+        // Format query string using application/x-www-form-urlencoded format ('+' for spaces)
+        var queryString = string.Join("&", queryParams.Select(kv =>
+            $"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(kv.Value).Replace("%20", "+")}"));
+
         var requestUrl = $"https://serpapi.com/search.json?{queryString}";
 
         _logger.LogInformation("Calling live SerpApi for query: '{Keyword}' in '{Location}'", keyword, location);

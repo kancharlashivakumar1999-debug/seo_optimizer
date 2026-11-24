@@ -12,6 +12,8 @@ public static class SqlQueries
             t.task_id AS TaskId,
             t.task_name AS TaskName,
             t.target_website AS TargetWebsite,
+            COALESCE(t.target_keyword, '') AS TargetKeyword,
+            COALESCE(t.target_location, '') AS TargetLocation,
             t.target_keywords::text AS TargetKeywordsJson,
             t.target_locations::text AS TargetLocationsJson,
             t.prompt_template AS PromptTemplate,
@@ -27,7 +29,7 @@ public static class SqlQueries
         FROM audit_tasks t
         LEFT JOIN task_runs r ON r.task_id = t.task_id AND r.is_active = TRUE
         WHERE t.is_active = TRUE
-        GROUP BY t.task_id, t.task_name, t.target_website, t.target_keywords, t.target_locations, t.prompt_template, t.check_engine, t.repeats_per_run, t.status, t.created_at, t.updated_at, t.created_by, t.updated_by
+        GROUP BY t.task_id, t.task_name, t.target_website, t.target_keyword, t.target_location, t.target_keywords, t.target_locations, t.prompt_template, t.check_engine, t.repeats_per_run, t.status, t.created_at, t.updated_at, t.created_by, t.updated_by
         ORDER BY t.created_at DESC;";
 
     public const string GetTaskByIdProjected = @"
@@ -35,6 +37,8 @@ public static class SqlQueries
             t.task_id AS TaskId,
             t.task_name AS TaskName,
             t.target_website AS TargetWebsite,
+            COALESCE(t.target_keyword, '') AS TargetKeyword,
+            COALESCE(t.target_location, '') AS TargetLocation,
             t.target_keywords::text AS TargetKeywordsJson,
             t.target_locations::text AS TargetLocationsJson,
             t.prompt_template AS PromptTemplate,
@@ -50,19 +54,21 @@ public static class SqlQueries
         FROM audit_tasks t
         LEFT JOIN task_runs r ON r.task_id = t.task_id AND r.is_active = TRUE
         WHERE t.task_id = @TaskId AND t.is_active = TRUE
-        GROUP BY t.task_id, t.task_name, t.target_website, t.target_keywords, t.target_locations, t.prompt_template, t.check_engine, t.repeats_per_run, t.status, t.created_at, t.updated_at, t.created_by, t.updated_by;";
+        GROUP BY t.task_id, t.task_name, t.target_website, t.target_keyword, t.target_location, t.target_keywords, t.target_locations, t.prompt_template, t.check_engine, t.repeats_per_run, t.status, t.created_at, t.updated_at, t.created_by, t.updated_by;";
 
     public const string UpsertTask = @"
         INSERT INTO audit_tasks (
-            task_id, task_name, target_website, target_keywords, target_locations,
+            task_id, task_name, target_website, target_keyword, target_location, target_keywords, target_locations,
             prompt_template, check_engine, repeats_per_run, status, created_at, updated_at, created_by, updated_by, is_active
         ) VALUES (
-            @TaskId, @TaskName, @TargetWebsite, @TargetKeywordsJson::jsonb, @TargetLocationsJson::jsonb,
+            @TaskId, @TaskName, @TargetWebsite, @TargetKeyword, @TargetLocation, @TargetKeywordsJson::jsonb, @TargetLocationsJson::jsonb,
             @PromptTemplate, @CheckEngine, @RepeatsPerRun, @Status, @CreatedAt, @UpdatedAt, @CreatedBy, @UpdatedBy, @IsActive
         )
         ON CONFLICT (task_id) DO UPDATE SET
             task_name = EXCLUDED.task_name,
             target_website = EXCLUDED.target_website,
+            target_keyword = EXCLUDED.target_keyword,
+            target_location = EXCLUDED.target_location,
             target_keywords = EXCLUDED.target_keywords,
             target_locations = EXCLUDED.target_locations,
             prompt_template = EXCLUDED.prompt_template,
@@ -81,15 +87,17 @@ public static class SqlQueries
     // --- Task Runs ---
     public const string InsertTaskRun = @"
         INSERT INTO task_runs (
-            run_id, task_id, run_number, run_status, run_note, implemented_changes,
+            run_id, task_id, target_keyword, target_location, run_number, run_status, run_note, implemented_changes,
             visibility_score, average_rank, total_keywords_checked, top10_hits, summary, duration_seconds,
             started_at, finished_at, created_at, updated_at, created_by, updated_by, is_active
         ) VALUES (
-            @RunId, @TaskId, @RunNumber, @RunStatus, @RunNote, @ImplementedChangesJson::jsonb,
+            @RunId, @TaskId, @TargetKeyword, @TargetLocation, @RunNumber, @RunStatus, @RunNote, @ImplementedChangesJson::jsonb,
             @VisibilityScore, @AverageRank, @TotalKeywordsChecked, @Top10Hits, @Summary, @DurationSeconds,
             @StartedAt, @FinishedAt, @CreatedAt, @UpdatedAt, @CreatedBy, @UpdatedBy, @IsActive
         )
         ON CONFLICT (run_id) DO UPDATE SET
+            target_keyword = EXCLUDED.target_keyword,
+            target_location = EXCLUDED.target_location,
             run_status = EXCLUDED.run_status,
             run_note = EXCLUDED.run_note,
             implemented_changes = EXCLUDED.implemented_changes,

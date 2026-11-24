@@ -26,14 +26,17 @@
           <input id="fSite" placeholder="example.com">
         </div>
       </div>
-      <div class="field">
-        <label>Keywords</label>
-        <div class="tag-input" id="kwBox"><input id="kwIn" placeholder="Type keyword and press Enter"></div>
-        <span class="hint">Each keyword is checked in every location.</span>
-      </div>
-      <div class="field">
-        <label>Locations</label>
-        <div class="tag-input" id="locBox"><input id="locIn" placeholder="e.g. Hyderabad, India – press Enter"></div>
+      <div class="row2">
+        <div class="field">
+          <label for="fKeyword">Target Keyword</label>
+          <input id="fKeyword" placeholder="e.g. dental clinic, nocode platform">
+          <span class="hint">Single keyword evaluated in live SERP.</span>
+        </div>
+        <div class="field">
+          <label for="fLocation">Target Location</label>
+          <input id="fLocation" placeholder="e.g. Hyderabad, Telangana, India">
+          <span class="hint">Google geographic search location.</span>
+        </div>
       </div>
       <div class="field">
         <label for="fPrompt">Prompt used to check rank</label>
@@ -201,8 +204,10 @@ async function syncFromDb(){
             id: t.taskId,
             name: t.taskName || t.targetWebsite,
             website: t.targetWebsite,
-            keywords: kw.length ? kw : ["General SEO"],
-            locations: loc.length ? loc : ["Global"],
+            keyword: t.targetKeyword || (kw.length ? kw[0] : "General SEO"),
+            location: t.targetLocation || (loc.length ? loc[0] : "Global"),
+            keywords: [t.targetKeyword || (kw.length ? kw[0] : "General SEO")],
+            locations: [t.targetLocation || (loc.length ? loc[0] : "Global")],
             prompt: t.promptTemplate || DEFAULT_PROMPT,
             latestRank: t.latestAverageRank,
             runs: initialRuns
@@ -327,7 +332,9 @@ function globalStats(){
 async function executeLiveRun(t,note,implemented){
   const bar=$("#runBar"),txt=$("#runText");
   $("#runProg").hidden=false;
-  txt.textContent="Calling SERP API for "+t.keywords.length+" keyword(s)...";
+  const kw = t.keyword || (t.keywords && t.keywords[0]) || "";
+  const loc = t.location || (t.locations && t.locations[0]) || "";
+  txt.textContent=`Calling SERP API for "${kw}" in "${loc}"...`;
   bar.style.width="30%";
 
   try {
@@ -338,8 +345,10 @@ async function executeLiveRun(t,note,implemented){
         taskId: t.id,
         taskName: t.name,
         website: t.website,
-        keywords: t.keywords,
-        locations: t.locations,
+        keyword: kw,
+        location: loc,
+        keywords: [kw],
+        locations: [loc],
         note: note,
         implemented: implemented
       })
@@ -687,6 +696,11 @@ function emptyState(){
   <div class="acts"><button class="btn primary" data-new>${icons.plus}New task</button></div></div>`;
 }
 
+function emptyRunsState(taskId){
+  return`<div class="panel empty"><h2>No execution runs found</h2><p>This task has not been executed yet. Click "Run now" to query the live SERP API, fetch competitors, and prepare RAG inputs.</p>
+  <div class="acts"><button class="btn primary" data-run="${taskId}">${icons.play}Run now</button></div></div>`;
+}
+
 /* ---------- Dashboard ---------- */
 function renderDashboard(){
   const v=$("#dynamicContainer");const s=globalStats();
@@ -724,11 +738,15 @@ function renderTasks(){
   v.innerHTML=`<div class="head"><div><h1>Ranking tasks</h1><p>Configured domains and target keywords.</p></div><button class="btn primary" data-new>${icons.plus}New task</button></div>
   ${tasks.length?`
   <div class="panel list-panel">
-    <div class="task-row head-row"><span>Task</span><span class="c-loc">Locations</span><span class="c-kw">Keywords</span><span class="c-last">Latest Rank</span><span></span></div>
-    ${tasks.map(t=>{const L=lastRun(t);return`<div class="task-row" data-go="${t.id}">
+    <div class="task-row head-row"><span>Task</span><span class="c-loc">Location</span><span class="c-kw">Keyword</span><span class="c-last">Latest Rank</span><span></span></div>
+    ${tasks.map(t=>{
+      const L=lastRun(t);
+      const kw = t.keyword || (t.keywords && t.keywords[0]) || "–";
+      const loc = t.location || (t.locations && t.locations[0]) || "–";
+      return`<div class="task-row" data-go="${t.id}">
       <div style="min-width:0"><div class="t-name">${esc(t.name)}</div><div class="t-site">${esc(t.website)} – ${(t.runs||[]).length} run(s)</div></div>
-      <div class="c-loc chips">${(t.locations||[]).map(l=>`<span class="chip">${esc(l)}</span>`).join("")}</div>
-      <div class="c-kw">${(t.keywords||[]).length}</div>
+      <div class="c-loc chips"><span class="chip">${esc(loc)}</span></div>
+      <div class="c-kw"><span class="chip" style="background:var(--surface-2);">${esc(kw)}</span></div>
       <div class="c-last"><span class="big-rank">${rankBadge(L ? runAvg(L) : t.latestRank)}</span></div> 
       <div><button class="btn sm" data-go="${t.id}">View Details</button></div>
     </div>`}).join("")}
@@ -754,8 +772,10 @@ async function renderDetail(t){
         current.name = data.task.taskName || current.name;
         current.website = data.task.targetWebsite || current.website;
         current.prompt = data.task.promptTemplate || current.prompt;
-        current.keywords = kw.length ? kw : current.keywords;
-        current.locations = loc.length ? loc : current.locations;
+        current.keyword = data.task.targetKeyword || (kw.length ? kw[0] : current.keyword || "");
+        current.location = data.task.targetLocation || (loc.length ? loc[0] : current.location || "");
+        current.keywords = [current.keyword];
+        current.locations = [current.location];
       }
       if (data.runs && data.runs.length) {
         runs = data.runs.map((r, idx) => ({
@@ -784,8 +804,8 @@ async function renderDetail(t){
       <h1>${esc(current.name)}</h1>
       <div class="meta-row">
         <span>Website: <b>${esc(current.website)}</b></span>
-        <span>Keywords: <b>${(current.keywords||[]).join(", ")}</b></span>
-        <span>Locations: <b>${(current.locations||[]).join(", ")}</b></span>
+        <span>Keyword: <b>${esc(current.keyword || (current.keywords||[])[0] || "–")}</b></span>
+        <span>Location: <b>${esc(current.location || (current.locations||[])[0] || "–")}</b></span>
       </div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -828,7 +848,7 @@ async function renderDetail(t){
       </table>
     </div>
   </div>
-  ` : emptyState()}`;
+  ` : emptyRunsState(current.id)}`;
 }
 
 /* ---------- Report Page (with Start Analyzing & RAG Input Display) ---------- */
@@ -959,55 +979,40 @@ async function renderReport(t,i){
 }
 
 /* ---------- task modal ---------- */
-let editId=null,kwTags=[],locTags=[];
-function drawTags(box,arr,input){
-  $$(".chip",box).forEach(c=>c.remove());
-  arr.forEach((tg,i)=>{
-    const c=document.createElement("span");
-    c.className="chip";
-    c.innerHTML=`${esc(tg)}<button type="button" aria-label="Remove ${esc(tg)}">×</button>`;
-    c.querySelector("button").onclick=()=>{arr.splice(i,1);drawTags(box,arr,input)};
-    box.insertBefore(c,input);
-  });
-}
-function bindTags(box,input,getArr){
-  box.onclick=()=>input.focus();
-  const add=val=>{val.split(/[\n,;]+/).map(s=>s.trim()).filter(Boolean).forEach(s=>{const a=getArr();if(!a.includes(s))a.push(s)});input.value="";drawTags(box,getArr(),input)};
-  input.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();add(input.value)}else if(e.key==="Backspace"&&!input.value&&getArr().length){getArr().pop();drawTags(box,getArr(),input)}};
-  input.onblur=()=>{if(input.value.trim())add(input.value)};
-}
-bindTags($("#kwBox"),$("#kwIn"),()=>kwTags);
-bindTags($("#locBox"),$("#locIn"),()=>locTags);
+let editId=null;
 
 function openTaskModal(t){
   editId=t?t.id:null;
   $("#tmTitle").textContent=t?"Edit ranking task":"New ranking task";
   $("#fName").value=t?.name||"";
   $("#fSite").value=t?.website||"";
+  $("#fKeyword").value=t?.keyword || (t?.keywords && t.keywords[0]) || "";
+  $("#fLocation").value=t?.location || (t?.locations && t.locations[0]) || "";
   $("#fPrompt").value=t?.prompt||DEFAULT_PROMPT;
-  kwTags=[...(t?.keywords||[])];
-  locTags=[...(t?.locations||[])];
-  drawTags($("#kwBox"),kwTags,$("#kwIn"));
-  drawTags($("#locBox"),locTags,$("#locIn"));
   $("#taskModal").classList.add("open");
   setTimeout(()=>$("#fName").focus(),30);
 }
 
 $("#saveTask").onclick=async()=>{
-  if($("#kwIn").value.trim()){kwTags.push(...$("#kwIn").value.split(/[\n,;]+/).map(s=>s.trim()).filter(Boolean));$("#kwIn").value=""}
-  if($("#locIn").value.trim()){locTags.push(...$("#locIn").value.split(/[\n;]+/).map(s=>s.trim()).filter(Boolean));$("#locIn").value=""}
-  const name=$("#fName").value.trim(),site=normDomain($("#fSite").value),prompt=$("#fPrompt").value.trim();
+  const name=$("#fName").value.trim();
+  const site=normDomain($("#fSite").value);
+  const kw=$("#fKeyword").value.trim();
+  const loc=$("#fLocation").value.trim();
+  const prompt=$("#fPrompt").value.trim();
+
   if(!site){toast("Add website to track");return $("#fSite").focus()}
-  if(!kwTags.length){toast("Add at least one keyword");return $("#kwIn").focus()}
-  if(!locTags.length){toast("Add at least one location");return $("#locIn").focus()}
+  if(!kw){toast("Add target keyword");return $("#fKeyword").focus()}
+  if(!loc){toast("Add target location");return $("#fLocation").focus()}
 
   const currentRuns = (editId && tasks.find(x=>x.id===editId)?.runs) || [];
   const t={
     id: editId || "",
     name: name || site,
     website: site,
-    keywords: [...new Set(kwTags)],
-    locations: [...new Set(locTags)],
+    keyword: kw,
+    location: loc,
+    keywords: [kw],
+    locations: [loc],
     prompt: prompt,
     runs: currentRuns
   };

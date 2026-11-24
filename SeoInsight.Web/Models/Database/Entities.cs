@@ -5,6 +5,8 @@ public sealed class AuditTaskEntity
     public Guid TaskId { get; set; }
     public string TaskName { get; set; } = string.Empty;
     public string TargetWebsite { get; set; } = string.Empty;
+    public string TargetKeyword { get; set; } = string.Empty;
+    public string TargetLocation { get; set; } = string.Empty;
     public string TargetKeywordsJson { get; set; } = "[]";
     public string TargetLocationsJson { get; set; } = "[]";
     public string? PromptTemplate { get; set; }
@@ -22,6 +24,8 @@ public sealed class TaskRunEntity
 {
     public Guid RunId { get; set; }
     public Guid TaskId { get; set; }
+    public string TargetKeyword { get; set; } = string.Empty;
+    public string TargetLocation { get; set; } = string.Empty;
     public int RunNumber { get; set; } = 1;
     public string RunStatus { get; set; } = "Running";
     public string? RunNote { get; set; }
