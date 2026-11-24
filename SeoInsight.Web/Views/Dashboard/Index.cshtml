@@ -419,17 +419,28 @@ async function executeLiveRun(t,note,implemented){
 }
 
 /* ---------- Start Analyzing with Google Gemini RAG ---------- */
+let isAnalyzingInProgress = false;
+
 async function startAnalyzingRag(reportId, ragInputIndex = 0) {
+  if (isAnalyzingInProgress) {
+    console.warn("Analysis is already running for report:", reportId);
+    return;
+  }
+  isAnalyzingInProgress = true;
+
   const btn = $("#btnStartAnalyzing");
   const box = $("#ragAnalysisOutputBox");
   const spinner = $("#ragAnalysisSpinner");
   const content = $("#ragAnalysisContent");
 
-  btn.disabled = true;
-  btn.innerHTML = `<span class="spin" style="display:inline-block;margin-right:6px"></span>Analyzing Top 5 Competitors...`;
-  box.style.display = "block";
-  spinner.style.display = "flex";
-  content.style.display = "none";
+  if (btn) {
+    btn.disabled = true;
+    btn.style.pointerEvents = "none";
+    btn.innerHTML = `<span class="spin" style="display:inline-block;margin-right:6px"></span>Analyzing Top 5 Competitors...`;
+  }
+  if (box) box.style.display = "block";
+  if (spinner) spinner.style.display = "flex";
+  if (content) content.style.display = "none";
 
   try {
     let parsedList = currentRagInputs[reportId];
@@ -480,10 +491,14 @@ async function startAnalyzingRag(reportId, ragInputIndex = 0) {
   } catch (err) {
     toast("Error during analysis: " + err.message, true);
   } finally {
-    btn.disabled = false;
-    btn.innerHTML = `${icons.spark}Start Analyzing`;
-    spinner.style.display = "none";
-    content.style.display = "block";
+    isAnalyzingInProgress = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.style.pointerEvents = "auto";
+      btn.innerHTML = `${icons.spark}Start Analyzing`;
+    }
+    if (spinner) spinner.style.display = "none";
+    if (content) content.style.display = "block";
   }
 }
 
@@ -652,7 +667,7 @@ function route(){
     if(lastDash > 7) {
       const taskId = h.slice(7, lastDash);
       const runIdx = parseInt(h.slice(lastDash + 1), 10) - 1;
-      const t = tasks.find(x => x.id === taskId || x.id.replace(/-/g, "") === taskId.replace(/-/g, ""));
+      const t = tasks.find(x => x && x.id && (String(x.id) === taskId || String(x.id).replace(/-/g, "") === String(taskId).replace(/-/g, "")));
       if(t && t.runs && t.runs[runIdx]){
         window.scrollTo(0,0);
         return renderReport(t, runIdx);
@@ -661,7 +676,7 @@ function route(){
     // Also allow direct run_id matching: #report-{runId}
     const directRunId = h.slice(7);
     for(const t of tasks){
-      const foundIdx = (t.runs||[]).findIndex(r => r.id === directRunId || r.id.replace(/-/g,"") === directRunId.replace(/-/g,""));
+      const foundIdx = (t?.runs||[]).findIndex(r => r && r.id && (String(r.id) === directRunId || String(r.id).replace(/-/g,"") === String(directRunId).replace(/-/g,"")));
       if(foundIdx >= 0){
         window.scrollTo(0,0);
         return renderReport(t, foundIdx);
@@ -669,7 +684,7 @@ function route(){
     }
   }
   if(h.startsWith("task-")){
-    const t=tasks.find(x=>"task-"+x.id===h);
+    const t=tasks.find(x=>x&&x.id&&"task-"+x.id===h);
     if(t)return renderDetail(t);
     location.hash="tasks";return;
   }
@@ -927,7 +942,7 @@ async function renderReport(t,i){
       </div>
     </div>
     <div style="display:flex;gap:10px;align-items:center;">
-      <button class="btn primary" id="btnStartAnalyzing" data-analyze data-runid="${runId || ''}" onclick="window.startAnalyzingRag && window.startAnalyzingRag('${runId}', 0)">
+      <button class="btn primary" id="btnStartAnalyzing" data-analyze data-runid="${runId || ''}">
         ${icons.spark}Start Analyzing
       </button>
       <button class="btn" data-run="${current.id}">${icons.play}Run Again</button>
