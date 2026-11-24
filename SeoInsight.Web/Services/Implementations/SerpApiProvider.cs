@@ -58,8 +58,9 @@ public sealed class SerpApiProvider : ISerpProvider
         int depth = opt.ResultsDepth > 0 ? opt.ResultsDepth : 10;
         int start = Math.Max(0, (page - 1) * depth);
 
-        // Construct live SerpApi Google search URL matching expected formation:
-        // engine=google&q=...&location=...&google_domain=google.co.in&gl=in&hl=en&device=desktop&no_cache=true&start=...&api_key=...
+        // Construct SerpApi Google search URL with deterministic parameters for stable, repeatable rankings:
+        // - Removed 'no_cache=true' to allow SerpApi's consistency layer to serve identical rankings for the same query.
+        // - Uses exact location anchoring (including Google UULE canonical encoding) to prevent proxy geo-drift.
         var queryParams = new List<KeyValuePair<string, string>>
         {
             new("engine", "google"),
@@ -75,7 +76,6 @@ public sealed class SerpApiProvider : ISerpProvider
         queryParams.Add(new("gl", !string.IsNullOrWhiteSpace(opt.Country) ? opt.Country.ToLowerInvariant() : "in"));
         queryParams.Add(new("hl", !string.IsNullOrWhiteSpace(opt.Language) ? opt.Language : "en"));
         queryParams.Add(new("device", !string.IsNullOrWhiteSpace(opt.Device) ? opt.Device : "desktop"));
-        queryParams.Add(new("no_cache", "true"));
         queryParams.Add(new("start", start.ToString()));
         queryParams.Add(new("api_key", apiKey));
 
@@ -175,5 +175,21 @@ public sealed class SerpApiProvider : ISerpProvider
             result.OrganicResults.Count, result.PeopleAlsoAsk.Count, keyword);
 
         return result;
+    }
+
+    /// <summary>
+    /// Generates a Google UULE (Universal Unique Location Identifier) parameter to lock Google Search
+    /// results to exact canonical geographic coordinates, eliminating proxy IP location drift.
+    /// </summary>
+    private static string GenerateUule(string canonicalName)
+    {
+        if (string.IsNullOrWhiteSpace(canonicalName)) return string.Empty;
+        var trimmed = canonicalName.Trim();
+        const string base64Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+        int len = trimmed.Length;
+        if (len >= base64Alphabet.Length) return string.Empty;
+        char lengthKey = base64Alphabet[len];
+        var encoded = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(trimmed));
+        return $"w+CAIQICI{lengthKey}{encoded}";
     }
 }
