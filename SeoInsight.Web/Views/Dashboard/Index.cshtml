@@ -809,25 +809,39 @@ function initDashboardChart(){
   const gridColor = dark ? '#2c3853' : '#d9dfe8';
   const mutedColor = dark ? '#7c889d' : '#7a8699';
 
+  // Always show a 6-run window on X-axis: Run 1 to Run 6
+  const labels = ['Run 1', 'Run 2', 'Run 3', 'Run 4', 'Run 5', 'Run 6'];
   const chartTasks = tasks.filter(t => t.recentRanks && t.recentRanks.length > 0);
-  const maxPoints = Math.max(6, ...chartTasks.map(t => t.recentRanks.length));
-  const labels = Array.from({length: maxPoints}, (_, i) => "Run " + (i + 1));
 
   const datasets = chartTasks.map((t, idx) => {
-    let data = [...t.recentRanks];
-    while(data.length < maxPoints && data.length > 0) {
-      data.unshift(data[0]); // Pad backwards for visual continuity if needed
+    // If runs exceed 6, slice the last 6 runs (e.g. 7 runs -> runs 2..7)
+    let rawRanks = [...t.recentRanks];
+    if (rawRanks.length > 6) {
+      rawRanks = rawRanks.slice(rawRanks.length - 6);
     }
+
+    // If fewer than 6 runs, place actual runs at their indices and fill remaining slots with null
+    // (e.g. 2 runs -> [12, 10, null, null, null, null], so the line stops at Run 2)
+    const points = [];
+    for (let i = 0; i < 6; i++) {
+      if (i < rawRanks.length) {
+        points.push(rawRanks[i]);
+      } else {
+        points.push(null);
+      }
+    }
+
     return {
       label: t.name,
-      data: data,
+      data: points,
       borderColor: t.color,
       backgroundColor: t.color,
       borderWidth: 2,
       borderDash: t.dash,
       pointRadius: 3,
       pointHoverRadius: 5,
-      tension: 0.3
+      tension: 0.3,
+      spanGaps: false
     };
   });
 
@@ -895,15 +909,30 @@ function renderTaskOverviewRows(){
   }
 
   tb.innerHTML = tasks.map((t, idx) => {
-    const ranks = t.recentRanks.length ? t.recentRanks : [t.latestRank || 20];
-    const latest = ranks[ranks.length - 1];
+    let ranks = t.recentRanks && t.recentRanks.length ? [...t.recentRanks] : (t.latestRank ? [t.latestRank] : []);
+    if (ranks.length > 6) {
+      ranks = ranks.slice(ranks.length - 6);
+    }
+
+    const latest = ranks.length ? ranks[ranks.length - 1] : "–";
     const prev = ranks.length > 1 ? ranks[ranks.length - 2] : latest;
-    const dl = prev - latest;
-    const mx = Math.max(...ranks), mn = Math.min(...ranks);
-    const pts = ranks.map((v, j) => (j * 16) + ',' + (2 + ((v - mn) / (mx - mn || 1)) * 16)).join(' ');
+    const dl = (typeof prev === "number" && typeof latest === "number") ? (prev - latest) : 0;
+    
+    let sparklineSvg = `<span class="c-lbl" style="font-size:11px;">1 run</span>`;
+    if (ranks.length > 1) {
+      const mx = Math.max(...ranks), mn = Math.min(...ranks);
+      const stepX = 84 / (ranks.length - 1);
+      const pts = ranks.map((v, j) => (j * stepX) + ',' + (2 + ((v - mn) / (mx - mn || 1)) * 16)).join(' ');
+      sparklineSvg = `
+        <svg width="84" height="20" aria-hidden="true">
+          <polyline points="${pts}" fill="none" stroke="${t.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      `;
+    }
+
     const changeClass = dl >= 0 ? "up" : "dn";
     const changeArrow = dl > 0 ? "↑" : (dl < 0 ? "↓" : "");
-    const changeDisplay = dl !== 0 ? `${changeArrow}${Math.abs(dl)}` : "0";
+    const changeDisplay = (ranks.length > 1 && dl !== 0) ? `${changeArrow}${Math.abs(dl)}` : "–";
 
     return `
       <tr style="cursor:pointer;" onclick="location.hash='task-${t.id}'">
@@ -916,9 +945,7 @@ function renderTaskOverviewRows(){
         <td><b>#${latest}</b></td>
         <td class="${changeClass}"><b>${changeDisplay}</b></td>
         <td>
-          <svg width="84" height="20" aria-hidden="true">
-            <polyline points="${pts}" fill="none" stroke="${t.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+          ${sparklineSvg}
         </td>
         <td style="text-align:right;color:var(--c-sub);">${fmtDT(t.lastRunAt)}</td>
       </tr>
@@ -1014,7 +1041,6 @@ function renderTasks(){
                 <td>${t.totalRuns}</td>
                 <td style="text-align:right" onclick="event.stopPropagation()">
                   <button class="btn sm" onclick="location.hash='task-${t.id}'">View</button>
-                  <button class="btn sm primary" data-run="${t.id}"><i class="ti ti-player-play"></i> Run</button>
                 </td>
               </tr>
             `).join("") : `<tr><td colspan="7" class="c-lbl" style="text-align:center;padding:24px;">No tasks configured yet. Click "New task" above.</td></tr>`}
