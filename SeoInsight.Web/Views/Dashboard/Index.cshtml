@@ -65,11 +65,12 @@
 .chip:hover { border-color: var(--c-accent); color: var(--c-text); }
 .chip.on { background: var(--surface-2); color: var(--c-text); border-color: var(--line); font-weight: 600; }
 .tbl-custom td, .tbl-custom th {
-  padding: 10px 8px;
+  padding: 10px 12px;
   font-size: 13px;
   text-align: left;
   border-bottom: 1px solid var(--line);
   font-variant-numeric: tabular-nums;
+  vertical-align: middle;
 }
 .tbl-custom th {
   font-size: 11.5px;
@@ -77,6 +78,20 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: .03em;
+  white-space: nowrap;
+}
+.tbl-custom td {
+  white-space: normal;
+  word-break: normal;
+}
+.cell-ellipsis {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+.tbl-custom tr:hover td {
+  background: var(--surface-2);
 }
 .tbl-custom tr:last-child td { border-bottom: none; }
 .up { color: var(--c-up); }
@@ -748,17 +763,17 @@ function renderDashboard(){
           All tasks <i class="ti ti-arrow-right"></i>
         </a>
       </div>
-      <div class="tbl-wrap">
-        <table class="tbl-custom" style="width:100%;border-collapse:collapse;table-layout:fixed">
+      <div class="tbl-wrap" style="margin:0;padding:0;overflow-x:auto;">
+        <table class="tbl-custom" style="width:100%;border-collapse:collapse;table-layout:fixed;min-width:680px;">
           <thead>
             <tr>
-              <th style="width:22%">Task</th>
-              <th style="width:12%">Keyword</th>
-              <th style="width:10%">Runs</th>
-              <th style="width:12%">Avg rank</th>
-              <th style="width:12%">Change</th>
-              <th style="width:18%">Trend</th>
-              <th style="text-align:right">Last run</th>
+              <th style="width:28%">Task</th>
+              <th style="width:22%">Keyword</th>
+              <th style="width:8%">Runs</th>
+              <th style="width:10%">Avg rank</th>
+              <th style="width:10%">Change</th>
+              <th style="width:10%">Trend</th>
+              <th style="width:12%;text-align:right">Last run</th>
             </tr>
           </thead>
           <tbody id="taskOverviewTbody"></tbody>
@@ -778,16 +793,16 @@ function renderDashboard(){
           ${tasks.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join("")}
         </select>
       </div>
-      <div class="tbl-wrap">
-        <table class="tbl-custom" style="width:100%;border-collapse:collapse;table-layout:fixed">
+      <div class="tbl-wrap" style="margin:0;padding:0;overflow-x:auto;">
+        <table class="tbl-custom" style="width:100%;border-collapse:collapse;table-layout:fixed;min-width:680px;">
           <thead>
             <tr>
-              <th style="width:22%">Task</th>
-              <th style="width:10%">Run</th>
-              <th style="width:24%">When</th>
+              <th style="width:26%">Task</th>
+              <th style="width:8%">Run</th>
+              <th style="width:22%">When</th>
               <th style="width:12%">Score</th>
               <th style="width:14%">Avg rank</th>
-              <th style="text-align:right">Status</th>
+              <th style="width:18%;text-align:right">Status</th>
             </tr>
           </thead>
           <tbody id="recentRunsTbody"></tbody>
@@ -937,17 +952,21 @@ function renderTaskOverviewRows(){
     return `
       <tr style="cursor:pointer;" onclick="location.hash='task-${t.id}'">
         <td style="font-weight:600;">
-          <span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${t.color};margin-right:6px"></span>
-          ${esc(t.name)}
+          <div style="display:flex;align-items:center;min-width:0;">
+            <span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${t.color};margin-right:8px;flex-shrink:0;"></span>
+            <span class="cell-ellipsis" title="${esc(t.name)}">${esc(t.name)}</span>
+          </div>
         </td>
-        <td style="color:var(--c-sub);">${esc(t.keyword)}</td>
+        <td style="color:var(--c-sub);">
+          <span class="cell-ellipsis" title="${esc(t.keyword)}">${esc(t.keyword)}</span>
+        </td>
         <td>${t.totalRuns}</td>
         <td><b>#${latest}</b></td>
         <td class="${changeClass}"><b>${changeDisplay}</b></td>
         <td>
           ${sparklineSvg}
         </td>
-        <td style="text-align:right;color:var(--c-sub);">${fmtDT(t.lastRunAt)}</td>
+        <td style="text-align:right;color:var(--c-sub);white-space:nowrap;">${fmtDT(t.lastRunAt)}</td>
       </tr>
     `;
   }).join("");
@@ -986,9 +1005,11 @@ function renderRecentRunsRows(filterTaskId = ""){
     const changeTxt = r.change > 0 ? `↑${r.change}` : (r.change < 0 ? `↓${Math.abs(r.change)}` : "");
     return `
       <tr style="cursor:pointer;" onclick="location.hash='task-${r.taskId}'">
-        <td style="font-weight:600;">${esc(r.taskName)}</td>
+        <td style="font-weight:600;">
+          <span class="cell-ellipsis" title="${esc(r.taskName)}">${esc(r.taskName)}</span>
+        </td>
         <td>#${r.runNumber}</td>
-        <td style="color:var(--c-sub);">${fmtDT(r.when)}</td>
+        <td style="color:var(--c-sub);white-space:nowrap;">${fmtDT(r.when)}</td>
         <td>${r.score}</td>
         <td>#${r.rank} <span class="${changeClass}">${changeTxt}</span></td>
         <td style="text-align:right;">
