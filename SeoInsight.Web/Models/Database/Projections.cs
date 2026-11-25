@@ -19,6 +19,32 @@ public sealed class TaskSummaryProjection
     public string UpdatedBy { get; set; } = "System";
     public int TotalRuns { get; set; }
     public decimal? LatestAverageRank { get; set; }
+    public decimal? PreviousAverageRank { get; set; }
+    public DateTime? LastRunAt { get; set; }
+    public List<decimal> RecentRanks { get; set; } = new();
+}
+
+public sealed class DashboardMetricsProjection
+{
+    public decimal? AvgRank { get; set; }
+    public decimal? AvgRankDelta { get; set; }
+    public int Top10Count { get; set; }
+    public int TotalKeywords { get; set; }
+    public int ImprovedCount { get; set; }
+    public int DroppedCount { get; set; }
+    public int UnchangedCount { get; set; }
+    public int NotRankingCount { get; set; }
+}
+
+public sealed class BiggestMoveProjection
+{
+    public string TaskName { get; set; } = string.Empty;
+    public string Domain { get; set; } = string.Empty;
+    public string Keyword { get; set; } = string.Empty;
+    public string Location { get; set; } = string.Empty;
+    public int PreviousRank { get; set; }
+    public int CurrentRank { get; set; }
+    public int Delta { get; set; }
 }
 
 public sealed class TaskRunSummaryProjection

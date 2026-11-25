@@ -49,9 +49,105 @@ public class DashboardController : Controller
     [HttpGet]
     public async Task<IActionResult> GetDashboardState(CancellationToken ct)
     {
-        var tasks = await _auditRepository.GetAllTasksAsync(ct);
+        var taskList = (await _auditRepository.GetAllTasksAsync(ct)).ToList();
         var reports = await _taskRepository.GetAllReportsAsync(ct);
-        return Ok(new { success = true, tasks, reports });
+        var recentRanksMap = await _auditRepository.GetRecentRanksForAllTasksAsync(ct);
+
+        int totalKeywords = 0;
+        int top10Hits = 0;
+        int notRankingHits = 0;
+        int improvedCount = 0;
+        int droppedCount = 0;
+        int unchangedCount = 0;
+
+        var biggestMoves = new List<BiggestMoveProjection>();
+
+        foreach (var task in taskList)
+        {
+            if (recentRanksMap.TryGetValue(task.TaskId, out var ranks))
+            {
+                task.RecentRanks = ranks;
+            }
+            else if (task.LatestAverageRank.HasValue)
+            {
+                task.RecentRanks = new List<decimal> { task.LatestAverageRank.Value };
+            }
+
+            totalKeywords++;
+
+            if (task.LatestAverageRank.HasValue)
+            {
+                if (task.LatestAverageRank.Value <= 10m)
+                {
+                    top10Hits++;
+                }
+                else if (task.LatestAverageRank.Value > 100m)
+                {
+                    notRankingHits++;
+                }
+
+                if (task.PreviousAverageRank.HasValue)
+                {
+                    decimal diff = task.PreviousAverageRank.Value - task.LatestAverageRank.Value;
+                    if (diff > 0) improvedCount++;
+                    else if (diff < 0) droppedCount++;
+                    else unchangedCount++;
+
+                    biggestMoves.Add(new BiggestMoveProjection
+                    {
+                        TaskName = task.TaskName,
+                        Domain = task.TargetWebsite,
+                        Keyword = task.TargetKeyword,
+                        Location = task.TargetLocation,
+                        PreviousRank = (int)Math.Round(task.PreviousAverageRank.Value),
+                        CurrentRank = (int)Math.Round(task.LatestAverageRank.Value),
+                        Delta = (int)Math.Round(diff)
+                    });
+                }
+                else
+                {
+                    unchangedCount++;
+                }
+            }
+            else
+            {
+                notRankingHits++;
+            }
+        }
+
+        biggestMoves = biggestMoves
+            .OrderByDescending(m => Math.Abs(m.Delta))
+            .Take(5)
+            .ToList();
+
+        var rankedTasks = taskList.Where(t => t.LatestAverageRank.HasValue).ToList();
+        decimal? overallAvgRank = rankedTasks.Any() ? rankedTasks.Average(t => t.LatestAverageRank!.Value) : null;
+        var prevRankedTasks = taskList.Where(t => t.PreviousAverageRank.HasValue).ToList();
+        decimal? prevOverallAvgRank = prevRankedTasks.Any() ? prevRankedTasks.Average(t => t.PreviousAverageRank!.Value) : null;
+        decimal? avgRankDelta = (overallAvgRank.HasValue && prevOverallAvgRank.HasValue) 
+            ? (prevOverallAvgRank.Value - overallAvgRank.Value) 
+            : null;
+
+        var metrics = new DashboardMetricsProjection
+        {
+            AvgRank = overallAvgRank.HasValue ? Math.Round(overallAvgRank.Value, 1) : null,
+            AvgRankDelta = avgRankDelta.HasValue ? Math.Round(avgRankDelta.Value, 1) : null,
+            Top10Count = top10Hits,
+            TotalKeywords = totalKeywords,
+            ImprovedCount = improvedCount,
+            DroppedCount = droppedCount,
+            UnchangedCount = unchangedCount,
+            NotRankingCount = notRankingHits
+        };
+
+        return Ok(new
+        {
+            success = true,
+            metrics,
+            tasks = taskList,
+            biggestMoves,
+            reports
+        });
     }
 
     [HttpGet]

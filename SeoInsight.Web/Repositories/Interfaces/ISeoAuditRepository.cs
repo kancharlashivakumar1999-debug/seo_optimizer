@@ -14,6 +14,7 @@ public interface ISeoAuditRepository
     Task<TaskSummaryProjection?> GetTaskByIdAsync(Guid taskId, CancellationToken ct = default);
     Task<Guid> SaveTaskAsync(AuditTaskEntity task, CancellationToken ct = default);
     Task<bool> DeleteTaskAsync(Guid taskId, CancellationToken ct = default);
+    Task<Dictionary<Guid, List<decimal>>> GetRecentRanksForAllTasksAsync(CancellationToken ct = default);
 
     // Task Run Operations (Execution Mapping)
     Task<Guid> SaveTaskRunAsync(TaskRunEntity run, CancellationToken ct = default);

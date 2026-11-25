@@ -62,6 +62,25 @@ public sealed class PostgresSeoAuditRepository : ISeoAuditRepository, ITaskRepos
         return rows > 0;
     }
 
+    public async Task<Dictionary<Guid, List<decimal>>> GetRecentRanksForAllTasksAsync(CancellationToken ct = default)
+    {
+        using var conn = _connectionFactory.CreateConnection();
+        var rows = await conn.QueryAsync<(Guid TaskId, decimal AverageRank, DateTime StartedAt)>(
+            new CommandDefinition(SqlQueries.GetRecentRanksForAllTasks, cancellationToken: ct));
+
+        var dict = new Dictionary<Guid, List<decimal>>();
+        foreach (var r in rows)
+        {
+            if (!dict.TryGetValue(r.TaskId, out var list))
+            {
+                list = new List<decimal>();
+                dict[r.TaskId] = list;
+            }
+            list.Add(r.AverageRank);
+        }
+        return dict;
+    }
+
     // --- Task Runs Mapping ---
     public async Task<Guid> SaveTaskRunAsync(TaskRunEntity run, CancellationToken ct = default)
     {

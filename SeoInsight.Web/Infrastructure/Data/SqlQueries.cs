@@ -25,7 +25,9 @@ public static class SqlQueries
             t.created_by AS CreatedBy,
             t.updated_by AS UpdatedBy,
             COUNT(r.run_id)::int AS TotalRuns,
-            (SELECT r2.average_rank FROM task_runs r2 WHERE r2.task_id = t.task_id ORDER BY r2.started_at DESC LIMIT 1) AS LatestAverageRank
+            (SELECT r2.average_rank FROM task_runs r2 WHERE r2.task_id = t.task_id AND r2.is_active = TRUE ORDER BY r2.started_at DESC LIMIT 1) AS LatestAverageRank,
+            (SELECT r3.average_rank FROM task_runs r3 WHERE r3.task_id = t.task_id AND r3.is_active = TRUE ORDER BY r3.started_at DESC OFFSET 1 LIMIT 1) AS PreviousAverageRank,
+            (SELECT r4.started_at FROM task_runs r4 WHERE r4.task_id = t.task_id AND r4.is_active = TRUE ORDER BY r4.started_at DESC LIMIT 1) AS LastRunAt
         FROM audit_tasks t
         LEFT JOIN task_runs r ON r.task_id = t.task_id AND r.is_active = TRUE
         WHERE t.is_active = TRUE
@@ -50,7 +52,9 @@ public static class SqlQueries
             t.created_by AS CreatedBy,
             t.updated_by AS UpdatedBy,
             COUNT(r.run_id)::int AS TotalRuns,
-            (SELECT r2.average_rank FROM task_runs r2 WHERE r2.task_id = t.task_id ORDER BY r2.started_at DESC LIMIT 1) AS LatestAverageRank
+            (SELECT r2.average_rank FROM task_runs r2 WHERE r2.task_id = t.task_id AND r2.is_active = TRUE ORDER BY r2.started_at DESC LIMIT 1) AS LatestAverageRank,
+            (SELECT r3.average_rank FROM task_runs r3 WHERE r3.task_id = t.task_id AND r3.is_active = TRUE ORDER BY r3.started_at DESC OFFSET 1 LIMIT 1) AS PreviousAverageRank,
+            (SELECT r4.started_at FROM task_runs r4 WHERE r4.task_id = t.task_id AND r4.is_active = TRUE ORDER BY r4.started_at DESC LIMIT 1) AS LastRunAt
         FROM audit_tasks t
         LEFT JOIN task_runs r ON r.task_id = t.task_id AND r.is_active = TRUE
         WHERE t.task_id = @TaskId AND t.is_active = TRUE
@@ -291,4 +295,46 @@ public static class SqlQueries
         FROM serp_request_debug_logs
         WHERE run_id = @RunId
         ORDER BY created_at ASC;";
+
+    public const string GetRecentRanksForAllTasks = @"
+        SELECT 
+            task_id AS TaskId,
+            average_rank AS AverageRank,
+            started_at AS StartedAt
+        FROM (
+            SELECT 
+                task_id, 
+                average_rank, 
+                started_at,
+                ROW_NUMBER() OVER (PARTITION BY task_id ORDER BY started_at ASC) as rn,
+                COUNT(*) OVER (PARTITION BY task_id) as total_runs
+            FROM task_runs
+            WHERE is_active = TRUE AND average_rank IS NOT NULL
+        ) sub
+        WHERE rn > (total_runs - 6)
+        ORDER BY task_id, started_at ASC;";
+
+    public const string GetAllTaskRunsOrdered = @"
+        SELECT 
+            r.run_id AS RunId,
+            r.task_id AS TaskId,
+            t.task_name AS TaskName,
+            r.target_keyword AS TargetKeyword,
+            r.target_location AS TargetLocation,
+            r.run_number AS RunNumber,
+            r.run_status AS RunStatus,
+            r.run_note AS RunNote,
+            r.visibility_score AS VisibilityScore,
+            r.average_rank AS AverageRank,
+            r.total_keywords_checked AS TotalKeywordsChecked,
+            r.top10_hits AS Top10Hits,
+            r.summary AS Summary,
+            r.duration_seconds AS DurationSeconds,
+            r.started_at AS StartedAt,
+            r.finished_at AS FinishedAt,
+            r.created_at AS CreatedAt
+        FROM task_runs r
+        LEFT JOIN audit_tasks t ON t.task_id = r.task_id
+        WHERE r.is_active = TRUE
+        ORDER BY r.started_at DESC;";
 }

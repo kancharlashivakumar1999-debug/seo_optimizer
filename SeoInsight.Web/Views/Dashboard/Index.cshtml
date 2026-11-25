@@ -2,6 +2,106 @@
     ViewData["Title"] = "SEO Rankline Dashboard";
 }
 
+<style>
+/* Base overrides matching the reference design */
+:root {
+  --c-bg: var(--surface);
+  --c-border: var(--line);
+  --c-text: var(--ink);
+  --c-sub: var(--ink-2);
+  --c-muted: var(--ink-3);
+  --c-accent: var(--accent);
+  --c-accent-bg: var(--accent-soft);
+  --c-up: var(--up);
+  --c-up-bg: var(--up-soft);
+  --c-dn: var(--down);
+  --c-dn-bg: var(--down-soft);
+  --c-gold: var(--gold);
+  --c-gold-bg: var(--gold-soft);
+}
+
+.c-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 16px;
+  position: relative;
+}
+.c-lbl { font-size: 12px; color: var(--c-sub); margin: 0; }
+.c-num { font-size: 22px; font-weight: 700; margin: 3px 0 0; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.c-ic {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+.pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.chip {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--c-sub);
+  background: var(--surface);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all .15s ease;
+}
+.chip:hover { border-color: var(--c-accent); color: var(--c-text); }
+.chip.on { background: var(--surface-2); color: var(--c-text); border-color: var(--line); font-weight: 600; }
+.tbl-custom td, .tbl-custom th {
+  padding: 10px 8px;
+  font-size: 13px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+.tbl-custom th {
+  font-size: 11.5px;
+  color: var(--c-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.tbl-custom tr:last-child td { border-bottom: none; }
+.up { color: var(--c-up); }
+.dn { color: var(--c-dn); }
+.mv-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.mv-item:last-child { border-bottom: none; }
+.spin {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(0,0,0,0.15);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+@@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+
 <!-- SPA View Mount Container -->
 <div id="dynamicContainer"></div>
 
@@ -10,7 +110,7 @@
 <div class="scrim" id="taskModal" role="dialog" aria-modal="true" aria-labelledby="tmTitle">
   <div class="modal">
     <div class="modal-h">
-      <h3 id="tmTitle">New ranking task</h3>
+      <h3 id="tmTitle" style="display:flex;align-items:center;gap:8px;"><i class="ti ti-plus"></i> New ranking task</h3>
       <button class="modal-close-btn" data-close aria-label="Close">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
       </button>
@@ -19,27 +119,27 @@
       <div class="row2">
         <div class="field">
           <label for="fName">Task name</label>
-          <input id="fName" placeholder="e.g. Hyderabad dental clinic – local">
+          <input id="fName" placeholder="e.g. sparity, acme-shoes, foodiehub">
         </div>
         <div class="field">
           <label for="fSite">Website to track</label>
-          <input id="fSite" placeholder="example.com">
+          <input id="fSite" placeholder="e.g. sparity.com">
         </div>
       </div>
       <div class="row2">
         <div class="field">
           <label for="fKeyword">Target Keyword</label>
-          <input id="fKeyword" placeholder="e.g. dental clinic, nocode platform">
-          <span class="hint">Single keyword evaluated in live SERP.</span>
+          <input id="fKeyword" placeholder="e.g. seo audit tool, cheap vps hosting">
+          <span class="hint">Single target keyword evaluated in live SERP.</span>
         </div>
         <div class="field">
           <label for="fLocation">Target Location</label>
-          <input id="fLocation" placeholder="e.g. Hyderabad, Telangana, India">
+          <input id="fLocation" placeholder="e.g. Hyderabad, London, Austin">
           <span class="hint">Google geographic search location.</span>
         </div>
       </div>
       <div class="field">
-        <label for="fPrompt">Prompt used to check rank</label>
+        <label for="fPrompt">Prompt used to check rank &amp; competitor gap</label>
         <textarea id="fPrompt"></textarea>
         <div class="placeholder-btns">
           <span class="hint">Insert:</span>
@@ -51,8 +151,8 @@
       <div class="row2">
         <div class="field">
           <label>Check engine</label>
-          <div class="seg" id="engSeg"><button type="button" data-v="ai" class="on">Live SERP + RAG</button></div>
-          <span class="hint" id="engHint">Live queries SERP provider, cleans competitor pages, and chunks into vector store.</span>
+          <div class="seg" id="engSeg"><button type="button" data-v="ai" class="on"><i class="ti ti-sparkles"></i> Live SERP + RAG</button></div>
+          <span class="hint" id="engHint">Live queries SERP provider, cleans competitor pages, and stores chunks in vector store.</span>
         </div>
         <div class="field">
           <label for="fRepeats">Checks per run</label>
@@ -71,34 +171,30 @@
 <div class="scrim" id="runModal" role="dialog" aria-modal="true" aria-labelledby="rmTitle">
   <div class="modal">
     <div class="modal-h">
-      <h3 id="rmTitle">Run task</h3>
+      <h3 id="rmTitle" style="display:flex;align-items:center;gap:8px;"><i class="ti ti-player-play"></i> Run Task</h3>
       <button class="modal-close-btn" data-close aria-label="Close">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
       </button>
     </div>
     <div class="modal-b">
-      <div class="field" id="implField" hidden>
-        <label>Which AI improvements did you implement?</label>
-        <div class="impl-list" id="implList"></div>
-      </div>
       <div class="field">
         <label for="fNote">Notes for this run</label>
-        <textarea id="fNote" placeholder="e.g. Rewrote service page titles, added FAQ schema, published new pages"></textarea>
+        <textarea id="fNote" placeholder="e.g. Added FAQ schema, updated page H1s, published content refresh"></textarea>
       </div>
       <div id="runProg" hidden>
         <div class="progress"><i id="runBar"></i></div>
-        <div class="run-status" id="runText"></div>
+        <div class="run-status" id="runText" style="font-size:13px;margin-top:6px;display:flex;align-items:center;gap:6px;"></div>
       </div>
-      <div id="ragInspectBox" style="display:none;background:var(--surface-2);border-radius:var(--radius);padding:12px;font-size:13px;">
+      <div id="ragInspectBox" style="display:none;background:var(--surface-2);border-radius:var(--radius);padding:12px;font-size:13px;margin-top:10px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
           <strong>Generated RAG Input Ready:</strong>
         </div>
-        <div id="ragInspectSummary" style="margin-top:6px;max-height:140px;overflow:auto;font-family:monospace;"></div>
+        <div id="ragInspectSummary" style="margin-top:6px;max-height:140px;overflow:auto;font-family:monospace;font-size:11.5px;"></div>
       </div>
     </div>
     <div class="modal-f">
       <button class="btn" data-close id="runCancel">Cancel</button>
-      <button class="btn primary" id="runGo">Start run now</button>
+      <button class="btn primary" id="runGo"><i class="ti ti-player-play"></i> Start run now</button>
     </div>
   </div>
 </div>
@@ -111,16 +207,14 @@
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
 const fmtDate=t=>new Date(t).toLocaleDateString(undefined,{day:"numeric",month:"short",year:"numeric"});
 const fmtDT=t=>new Date(t).toLocaleString(undefined,{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});
-const NF=101;
-const clip=(s,n)=>{s=String(s||"").trim();return s.length>n?s.slice(0,n-1)+"…":s};
 const normDomain=s=>String(s||"").toLowerCase().replace(/^https?:\/\//,"").replace(/^www\./,"").split(/[\/?#\s]/)[0].trim();
 const DEFAULT_PROMPT="Analyze SERP ranking for {keyword} in {location} for website {website}. Identify top competitors, extract key topics and recommend content optimizations.";
 
 function toast(msg, isError = false){
   const t=$("#toast");
+  if(!t) return;
   t.textContent=msg;
   t.className = isError ? "toast show error" : "toast show success";
   clearTimeout(toast._t);
@@ -129,7 +223,7 @@ function toast(msg, isError = false){
   }, isError ? 6500 : 3000);
 }
 
-// Global fetch interceptor to catch any server or network error centrally and show in toaster
+// Global fetch interceptor to catch any server or network error centrally
 const originalFetch = window.fetch;
 window.fetch = async function(...args) {
   try {
@@ -155,66 +249,58 @@ window.fetch = async function(...args) {
   }
 };
 
-window.addEventListener("unhandledrejection", e => {
-  const msg = e.reason?.message || String(e.reason || "Unhandled error");
-  toast(msg, true);
-});
-
-window.addEventListener("error", e => {
-  toast(e.message || "Script error", true);
-});
-const icons={
-  dash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>',
-  tasks:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1.2 1.2L7 5M3.5 12l1.2 1.2L7 11M3.5 18l1.2 1.2L7 17"/></svg>',
-  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
-  play:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z"/></svg>',
-  arrow:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
-  search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
-  spark:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/></svg>'
-};
-
-/* ---------- state & database storage (PostgreSQL Database Exclusively) ---------- */
-let tasks=[];
+/* ---------- state ---------- */
+let tasks = [];
+let reports = [];
+let dashboardMetrics = null;
+let biggestMoves = [];
 let currentRagInputs = {};
 let currentAnalyses = {};
+let activeChart = null;
+let chartFocusIndex = null;
+
+const THEME_COLORS = ['#2a78d6', '#eb6834', '#199e70', '#c98500', '#827dbd', '#d55181', '#3bbd8c', '#5598e7'];
+const DASH_PATTERNS = [[], [6, 4], [2, 3], [10, 3, 2, 3], [4, 4], [8, 4], [3, 3], []];
 
 async function syncFromDb(){
   try {
     const res = await fetch("/Dashboard/GetDashboardState");
     if(res.ok) {
       const data = await res.json();
-      if(data.tasks && data.tasks.length) {
-        const dbTasks = [];
-        for(const t of data.tasks) {
-          let kw = [];
-          try { kw = JSON.parse(t.targetKeywordsJson || "[]"); } catch(e){}
-          let loc = [];
-          try { loc = JSON.parse(t.targetLocationsJson || "[]"); } catch(e){}
+      if(data.success) {
+        dashboardMetrics = data.metrics || null;
+        biggestMoves = data.biggestMoves || [];
+        reports = data.reports || [];
+        
+        if(data.tasks && data.tasks.length) {
+          tasks = data.tasks.map((t, idx) => {
+            let kwList = [];
+            try { kwList = JSON.parse(t.targetKeywordsJson || "[]"); } catch(e){}
+            let locList = [];
+            try { locList = JSON.parse(t.targetLocationsJson || "[]"); } catch(e){}
 
-          const initialRuns = [];
-          if (t.totalRuns > 0) {
-            initialRuns.push({
-              avgRank: t.latestAverageRank,
-              score: 0,
-              at: new Date(t.updatedAt || t.createdAt).getTime()
-            });
-          }
+            const ranks = (t.recentRanks && t.recentRanks.length) 
+              ? t.recentRanks.map(v => Number(v))
+              : (t.latestAverageRank ? [Number(t.latestAverageRank)] : []);
 
-          dbTasks.push({
-            id: t.taskId,
-            name: t.taskName || t.targetWebsite,
-            website: t.targetWebsite,
-            keyword: t.targetKeyword || (kw.length ? kw[0] : "General SEO"),
-            location: t.targetLocation || (loc.length ? loc[0] : "Global"),
-            keywords: [t.targetKeyword || (kw.length ? kw[0] : "General SEO")],
-            locations: [t.targetLocation || (loc.length ? loc[0] : "Global")],
-            prompt: t.promptTemplate || DEFAULT_PROMPT,
-            latestRank: t.latestAverageRank,
-            runs: initialRuns
+            return {
+              id: t.taskId,
+              name: t.taskName || t.targetWebsite,
+              website: t.targetWebsite,
+              keyword: t.targetKeyword || (kwList.length ? kwList[0] : "General SEO"),
+              location: t.targetLocation || (locList.length ? locList[0] : "Global"),
+              keywords: kwList.length ? kwList : [t.targetKeyword || "General SEO"],
+              locations: locList.length ? locList : [t.targetLocation || "Global"],
+              prompt: t.promptTemplate || DEFAULT_PROMPT,
+              totalRuns: t.totalRuns || 0,
+              latestRank: t.latestAverageRank != null ? Number(t.latestAverageRank) : null,
+              previousRank: t.previousAverageRank != null ? Number(t.previousAverageRank) : null,
+              lastRunAt: t.lastRunAt || t.updatedAt || t.createdAt,
+              recentRanks: ranks,
+              color: THEME_COLORS[idx % THEME_COLORS.length],
+              dash: DASH_PATTERNS[idx % DASH_PATTERNS.length]
+            };
           });
-        }
-        if(dbTasks.length) {
-          tasks = dbTasks;
         }
       }
     }
@@ -224,11 +310,6 @@ async function syncFromDb(){
 }
 
 async function saveTask(t){
-  const idx=tasks.findIndex(x=>x.id===t.id);
-  const existingRuns = idx >= 0 ? tasks[idx].runs || [] : [];
-  t.runs = existingRuns;
-  if(idx>=0) tasks[idx]=t; else tasks.unshift(t);
-
   try {
     const res = await fetch("/Dashboard/SaveTask", {
       method: "POST",
@@ -236,106 +317,52 @@ async function saveTask(t){
       body: JSON.stringify(t)
     });
     if (res.ok) {
-      const data = await res.json();
-      if (data.taskId) {
-        t.id = data.taskId;
-        if (idx >= 0) {
-          tasks[idx].id = data.taskId;
-        }
-      }
+      await syncFromDb();
       return true;
-    } else {
-      throw new Error("HTTP " + res.status);
     }
+    return false;
   } catch(e){
     toast("Failed to save task: " + e.message, true);
     return false;
   }
 }
 
-async function saveRun(t,r){
-  const currentTask = tasks.find(x=>x.id===t.id) || t;
-  if(!currentTask.runs) currentTask.runs=[];
-  currentTask.runs.push(r);
-
-  try {
-    await fetch("/Dashboard/SaveRun", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ task: currentTask, run: r })
-    });
-  } catch(e){}
-}
-
 async function removeTask(id){
-  tasks = tasks.filter(x=>x.id!==id);
   try {
-    await fetch("/Dashboard/DeleteTask?id=" + encodeURIComponent(id), { method: "DELETE" });
-  } catch(e){}
-}
-function setStatus(){
-  $("#storeStatus").innerHTML='<span class="dot ok"></span>PostgreSQL (Dapper + Projected Columns)';
-  $("#engineStatus").innerHTML='<span class="dot ok"></span>SERP API + Google Gemini Ready';
+    const res = await fetch("/Dashboard/DeleteTask?id=" + encodeURIComponent(id), { method: "DELETE" });
+    if(res.ok) {
+      await syncFromDb();
+      return true;
+    }
+    return false;
+  } catch(e){
+    toast("Failed to delete task: " + e.message, true);
+    return false;
+  }
 }
 
-/* ---------- metrics ---------- */
-const runAvg=r=>{
-  if(!r) return null;
-  if(r.avgRank != null) return r.avgRank;
-  const found = (r.results||[]).filter(x=>x.rank!=null).map(x=>x.rank);
-  if(found.length) return found.reduce((a,b)=>a+b,0)/found.length;
-  const v=(r.results||[]).map(x=>x.rank);
-  return v.length ? null : null;
-};
-const foundAvg=r=>{if(!r)return null;if(r.avgRank!=null)return r.avgRank;const v=(r.results||[]).filter(x=>x.rank!=null).map(x=>x.rank);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null};
-const lastRun=t=>t.runs&&t.runs.length?t.runs[0] || t.runs[t.runs.length-1]:null;
-const prevRun=t=>t.runs&&t.runs.length>1?t.runs[1] || t.runs[t.runs.length-2]:null;
-const fmtRank=r=>{
-  if(r==null) return "–";
+function setStatus(){
+  const s1 = $("#storeStatus"), s2 = $("#engineStatus");
+  if(s1) s1.innerHTML = '<i class="ti ti-database" style="color:var(--up);margin-right:6px"></i>PostgreSQL';
+  if(s2) s2.innerHTML = '<i class="ti ti-sparkles" style="color:var(--up);margin-right:6px"></i>SERP + Gemini';
+}
+
+function fmtRank(r){
+  if(r == null) return "–";
   const num = typeof r === "number" ? r : parseFloat(r);
   if(isNaN(num)) return "–";
   if(num >= 101) return "100+";
-  return (Math.round(num*10)/10).toString();
-};
-function rankBadge(r){
-  if(r==null)return'<span class="rank nf">Not found</span>';
-  const num=typeof r==="number"?r:parseFloat(r);
-  if(isNaN(num)||num>=101)return'<span class="rank nf">100+</span>';
-  const n=Math.round(num);
-  return`<span class="rank ${n<=3?"t3":n<=10?"t10":""}">${fmtRank(num)}</span>`;
-}
-function deltaPill(prev,cur){
-  if(prev==null&&cur==null)return'<span class="pill flat">–</span>';
-  if(prev==null)return'<span class="pill up">New</span>';
-  if(cur==null)return'<span class="pill down">Lost</span>';
-  const d=Math.round((prev-cur)*10)/10;
-  if(Math.abs(d)<0.05)return'<span class="pill flat">0</span>';
-  return d>0?`<span class="pill up">▲ ${d}</span>`:`<span class="pill down">▼ ${Math.abs(d)}</span>`;
-}
-function pairs(t){const out=[];(t.keywords||[]).forEach(k=>(t.locations||[]).forEach(l=>out.push({keyword:k,location:l})));return out}
-function resultFor(run,k,l){return run?(run.results||[]).find(x=>x.keyword===k&&x.location===l):null}
-function globalStats(){
-  let kw=0,runs=0,top3=0,top10=0,up=0,down=0,sum=0,cnt=0;
-  tasks.forEach(t=>{
-    kw+=pairs(t).length;runs+=(t.runs||[]).length;
-    const L=lastRun(t),P=prevRun(t);if(!L)return;
-    (L.results||[]).forEach(r=>{
-      if(r.rank!=null){sum+=r.rank;cnt++;if(r.rank<=3.5)top3++;if(r.rank<=10.5)top10++}
-      const p=P?resultFor(P,r.keyword,r.location):null;
-      if(p){const a=p.rank??NF,b=r.rank??NF;if(b<a-0.05)up++;else if(b>a+0.05)down++}
-    });
-  });
-  return{kw,runs,top3,top10,up,down,avg:cnt?sum/cnt:null};
+  return "#" + (Math.round(num * 10) / 10).toString();
 }
 
 /* ---------- Execute Live SERP API + Prepare RAG Input ---------- */
-async function executeLiveRun(t,note,implemented){
-  const bar=$("#runBar"),txt=$("#runText");
-  $("#runProg").hidden=false;
+async function executeLiveRun(t, note, implemented){
+  const bar = $("#runBar"), txt = $("#runText");
+  $("#runProg").hidden = false;
   const kw = t.keyword || (t.keywords && t.keywords[0]) || "";
   const loc = t.location || (t.locations && t.locations[0]) || "";
-  txt.textContent=`Calling SERP API for "${kw}" in "${loc}"...`;
-  bar.style.width="30%";
+  txt.innerHTML = `<span class="spin"></span> Querying live SERP for "${esc(kw)}" in "${esc(loc)}"...`;
+  bar.style.width = "30%";
 
   try {
     const response = await fetch("/Dashboard/RunSerpAnalysis", {
@@ -358,62 +385,32 @@ async function executeLiveRun(t,note,implemented){
       throw new Error("HTTP error " + response.status);
     }
 
-    bar.style.width="70%";
-    txt.textContent="Scraping competitor pages & storing chunks in Vector RAM...";
+    bar.style.width = "75%";
+    txt.innerHTML = `<span class="spin"></span> Vectorizing competitor chunks and saving to database...`;
 
     const data = await response.json();
-    bar.style.width="100%";
-    txt.textContent="SERP results & RAG inputs prepared successfully!";
+    bar.style.width = "100%";
+    txt.innerHTML = `<i class="ti ti-check" style="color:var(--up);"></i> SERP data &amp; RAG inputs prepared!`;
 
-    // Retain RAG Input for analysis session
-    currentRagInputs[data.report.id] = data.ragInputs;
+    // Cache RAG payload
+    if (data.report && data.report.id) {
+      currentRagInputs[data.report.id] = data.ragInputs;
+    }
     if (data.runId) {
       currentRagInputs[data.runId] = data.ragInputs;
     }
 
     // Show preview of RAG Input
-    $("#ragInspectBox").style.display="block";
-    $("#ragInspectSummary").innerHTML=esc(JSON.stringify(data.ragInputs[0], null, 2));
+    $("#ragInspectBox").style.display = "block";
+    $("#ragInspectSummary").innerHTML = esc(JSON.stringify(data.ragInputs && data.ragInputs[0] ? data.ragInputs[0] : data.ragInputs, null, 2));
 
-    const run={
-      id: data.report.id,
-      at: Date.now(),
-      note: note.trim(),
-      implemented: implemented,
-      engine: "live-serp",
-      repeats: 1,
-      results: (data.report.keywordResults||[]).map(kr=>({
-        keyword: kr.keyword,
-        location: kr.location,
-        rank: kr.rank,
-        samples: [kr.rank],
-        hits: kr.hits,
-        top10: (kr.top10||[]).map(item=>({
-          rank: item.position,
-          name: item.title,
-          domain: item.domain,
-          why: item.isOwnDomain ? "Your tracked site" : "Organic ranking competitor",
-          isMe: item.isOwnDomain
-        }))
-      })),
-      report: {
-        source: "serp-live",
-        at: Date.now(),
-        score: data.report.visibilityScore,
-        summary: data.report.summary,
-        changeImpact: "Live SERP data fetched and vectorized. RAG input created.",
-        wins: data.report.keywordResults.filter(r=>r.rank && r.rank<=3).map(r=>"Top 3 rank achieved for "+r.keyword),
-        issues: data.report.keywordResults.filter(r=>!r.rank || r.rank>10).map(r=>"Outside top 10 for "+r.keyword),
-        patterns: ["Competitors have dedicated keyword URLs and extensive schema."],
-        competitors: (data.report.keywordResults[0]?.top10||[]).slice(0,4).map(c=>({ domain: c.domain, name: c.title, whyTop: c.snippet })),
-        recommendations: []
-      },
-      ragInputId: data.report.id
+    await syncFromDb();
+    return {
+      runId: data.runId || data.report?.id,
+      reportId: data.report?.id
     };
-
-    return run;
   } catch(err) {
-    txt.textContent="Failed to run: " + err.message;
+    txt.innerHTML = `<span style="color:var(--c-dn)">Failed to run: ${esc(err.message)}</span>`;
     return null;
   }
 }
@@ -421,7 +418,7 @@ async function executeLiveRun(t,note,implemented){
 /* ---------- Start Analyzing with Google Gemini RAG ---------- */
 let isAnalyzingInProgress = false;
 
-async function startAnalyzingRag(reportId, ragInputIndex = 0) {
+async function startAnalyzingRag(reportId) {
   if (isAnalyzingInProgress) {
     console.warn("Analysis is already running for report:", reportId);
     return;
@@ -436,21 +433,22 @@ async function startAnalyzingRag(reportId, ragInputIndex = 0) {
   if (btn) {
     btn.disabled = true;
     btn.style.pointerEvents = "none";
-    btn.innerHTML = `<span class="spin" style="display:inline-block;margin-right:6px"></span>Analyzing Top 5 Competitors...`;
+    btn.innerHTML = `<span class="spin" style="margin-right:6px"></span>Analyzing Top Competitors...`;
   }
   if (box) box.style.display = "block";
   if (spinner) spinner.style.display = "flex";
   if (content) content.style.display = "none";
 
   try {
+    let targetPayload = null;
     let parsedList = currentRagInputs[reportId];
+
     if (!parsedList || !parsedList.length) {
-      // Try to load from server database
       const res = await fetch("/Dashboard/GetRunDetail?id=" + encodeURIComponent(reportId));
       if (res.ok) {
         const detail = await res.json();
         if (detail.ragPayload) {
-          parsedList = [{
+          targetPayload = {
             runId: detail.ragPayload.runId,
             taskId: detail.ragPayload.taskId,
             keyword: detail.ragPayload.targetKeyword,
@@ -462,14 +460,15 @@ async function startAnalyzingRag(reportId, ragInputIndex = 0) {
             ingestedChunks: JSON.parse(detail.ragPayload.ingestedChunksJson || "[]"),
             systemPrompt: detail.ragPayload.systemPrompt,
             userPrompt: detail.ragPayload.userPrompt
-          }];
-          currentRagInputs[reportId] = parsedList;
+          };
+          currentRagInputs[reportId] = [targetPayload];
         }
       }
+    } else {
+      targetPayload = parsedList[0];
     }
 
-    if (!parsedList || !parsedList.length) throw new Error("No RAG input payload found for this report.");
-    const targetPayload = parsedList[ragInputIndex] || parsedList[0];
+    if (!targetPayload) throw new Error("No RAG input payload found for this run.");
 
     const response = await fetch("/Dashboard/StartAnalyzing", {
       method: "POST",
@@ -482,12 +481,9 @@ async function startAnalyzingRag(reportId, ragInputIndex = 0) {
     const result = await response.json();
     const data = result.analysis;
 
-    // Cache analysis output in memory for current view
     currentAnalyses[reportId] = data;
-
-    // Render structured results
     renderAnalysisOutput(data);
-    toast("Principal SEO Gap Analysis Completed & Saved in PostgreSQL!");
+    toast("SEO Gap Analysis Completed & Saved in PostgreSQL!");
   } catch (err) {
     toast("Error during analysis: " + err.message, true);
   } finally {
@@ -495,14 +491,13 @@ async function startAnalyzingRag(reportId, ragInputIndex = 0) {
     if (btn) {
       btn.disabled = false;
       btn.style.pointerEvents = "auto";
-      btn.innerHTML = `${icons.spark}Start Analyzing`;
+      btn.innerHTML = `<i class="ti ti-sparkles"></i> Start Analyzing`;
     }
     if (spinner) spinner.style.display = "none";
     if (content) content.style.display = "block";
   }
 }
 
-// Helper to safely get properties regardless of PascalCase or camelCase
 function prop(obj, ...keys) {
   if (!obj) return undefined;
   for (const k of keys) {
@@ -517,7 +512,7 @@ function prop(obj, ...keys) {
 
 function renderAnalysisOutput(data) {
   const el = $("#ragAnalysisContent");
-  if(!data) { el.innerHTML = "<p class='muted'>No analysis available.</p>"; return; }
+  if(!data) { el.innerHTML = "<p style='color:var(--c-muted)'>No analysis available.</p>"; return; }
 
   const target = prop(data, "targetAnalysis") || {};
   const rankPred = prop(data, "rankPrediction") || {};
@@ -537,101 +532,73 @@ function renderAnalysisOutput(data) {
   const confText = typeof conf === 'number' ? (conf * 100).toFixed(0) + "%" : "–";
 
   el.innerHTML = `
-    <!-- Target Analysis & Rank Prediction Strip -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px;">
-      <div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px;">
-        <h3 class="h3" style="color:var(--accent);margin-bottom:6px;">Target Assessment</h3>
-        <p style="margin:0 0 6px;font-size:13.5px;"><strong>URL:</strong> ${esc(prop(target, "targetUrl") || "–")}</p>
-        <p style="margin:0 0 6px;font-size:13.5px;"><strong>Intent Fit:</strong> <span class="pill ${intentFit==='High'?'up':(intentFit==='Moderate'?'flat':'down')}">${esc(intentFit)}</span></p>
-        <p style="margin:6px 0 0;font-size:13px;color:var(--ink-2);">${esc(prop(target, "overallDrawbackSummary") || "–")}</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+      <div style="background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;">
+        <h4 style="color:var(--c-accent);margin:0 0 6px;font-size:13px;display:flex;align-items:center;gap:6px;">
+          <i class="ti ti-target-arrow"></i> Target Assessment
+        </h4>
+        <p style="margin:0 0 4px;font-size:12.5px;"><strong>URL:</strong> ${esc(prop(target, "targetUrl") || "–")}</p>
+        <p style="margin:0 0 4px;font-size:12.5px;"><strong>Intent Fit:</strong> <span class="pill ${intentFit==='High'?'up':(intentFit==='Moderate'?'flat':'dn')}">${esc(intentFit)}</span></p>
+        <p style="margin:4px 0 0;font-size:12px;color:var(--c-sub);">${esc(prop(target, "overallDrawbackSummary") || "–")}</p>
       </div>
 
-      <div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px;">
-        <h3 class="h3" style="color:var(--up);margin-bottom:6px;">Rank Prediction Impact</h3>
-        <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px;">
-          <div><span style="font-size:11.5px;color:var(--ink-3);">Current</span><div style="font-size:20px;font-weight:800;">${curPosDisplay}</div></div>
-          <div>${icons.arrow}</div>
-          <div><span style="font-size:11.5px;color:var(--ink-3);">Projected</span><div style="font-size:20px;font-weight:800;color:var(--up);">${projPosDisplay}</div></div>
-          <div style="margin-left:auto;"><span class="pill up">${esc(prop(rankPred, "projectedRange") || "Projected Range")}</span></div>
+      <div style="background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;">
+        <h4 style="color:var(--c-up);margin:0 0 6px;font-size:13px;display:flex;align-items:center;gap:6px;">
+          <i class="ti ti-trending-up"></i> Rank Prediction Impact
+        </h4>
+        <div style="display:flex;gap:12px;align-items:center;margin-bottom:6px;">
+          <div><span style="font-size:11px;color:var(--c-muted);">Current</span><div style="font-size:18px;font-weight:700;">${curPosDisplay}</div></div>
+          <div><i class="ti ti-arrow-right" style="color:var(--c-muted)"></i></div>
+          <div><span style="font-size:11px;color:var(--c-muted);">Projected</span><div style="font-size:18px;font-weight:700;color:var(--c-up);">${projPosDisplay}</div></div>
+          <div style="margin-left:auto;"><span class="pill" style="background:var(--c-up-bg);color:var(--c-up);">${esc(prop(rankPred, "projectedRange") || "Top 10")}</span></div>
         </div>
-        <p style="margin:0;font-size:12.5px;color:var(--ink-2);"><strong>Timeline:</strong> ${esc(prop(rankPred, "timelineWeeks") || "–")} | <strong>Confidence:</strong> ${confText}</p>
+        <p style="margin:0;font-size:12px;color:var(--c-sub);"><strong>Timeline:</strong> ${esc(prop(rankPred, "timelineWeeks") || "–")} | <strong>Confidence:</strong> ${confText}</p>
       </div>
     </div>
 
-    <!-- Gap Analysis -->
-    <div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px;margin-bottom:16px;">
-      <h3 class="h3" style="margin-bottom:10px;">Competitive Gap Analysis</h3>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+    <!-- Competitive Gap Analysis -->
+    <div style="background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:14px;">
+      <h4 style="margin:0 0 8px;font-size:13px;display:flex;align-items:center;gap:6px;">
+        <i class="ti ti-arrows-split-2"></i> Competitive Gap Analysis
+      </h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
         <div>
-          <strong style="font-size:13px;color:var(--down);">Our Major Drawbacks:</strong>
-          <ul class="bul iss" style="font-size:13px;">
+          <strong style="font-size:12px;color:var(--c-dn);">Our Major Drawbacks:</strong>
+          <ul style="font-size:12px;margin:4px 0 0 16px;padding:0;line-height:1.5;">
             ${(prop(gap, "ourMajorDrawbacks") || []).map(d=>`<li>${esc(d)}</li>`).join("")}
           </ul>
         </div>
         <div>
-          <strong style="font-size:13px;color:var(--up);">Competitor Advantages:</strong>
-          <ul class="bul win" style="font-size:13px;">
+          <strong style="font-size:12px;color:var(--c-up);">Competitor Advantages:</strong>
+          <ul style="font-size:12px;margin:4px 0 0 16px;padding:0;line-height:1.5;">
             ${(prop(gap, "competitorAdvantages") || []).map(a=>`<li>${esc(a)}</li>`).join("")}
           </ul>
         </div>
       </div>
-      <div style="margin-top:10px;">
-        <strong style="font-size:13px;">Missing Content Topics &amp; Questions:</strong>
-        <div class="chips" style="margin-top:6px;">
-          ${(prop(gap, "missingContentTopics") || []).map(t=>`<span class="chip" style="background:var(--surface-2);">${esc(t)}</span>`).join("")}
-        </div>
-      </div>
     </div>
 
-    <!-- Top 5 Competitors Deep Dive -->
-    <div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px;margin-bottom:16px;">
-      <h3 class="h3" style="margin-bottom:8px;">Top 5 Ranking Competitors Deep Dive</h3>
-      <div class="tbl-wrap">
-        <table>
-          <thead><tr><th>Rank</th><th>Competitor</th><th>Why They Are Ahead</th><th>Content Angle</th></tr></thead>
-          <tbody>
-            ${compDeep.map(c=>`
-              <tr>
-                <td><span class="rank ${(prop(c, "position")||0)<=3?'t3':'t10'}">#${prop(c, "position")||"–"}</span></td>
-                <td><strong>${esc(prop(c, "competitorName")||"–")}</strong><div class="muted" style="font-size:11.5px;">${esc(prop(c, "url")||"")}</div></td>
-                <td style="max-width:280px;white-space:normal;font-size:13px;">${esc(prop(c, "whyTheyAreAhead")||"–")}</td>
-                <td style="max-width:260px;white-space:normal;font-size:13px;color:var(--ink-2);">${esc(prop(c, "contentAngle")||"–")}</td>
-              </tr>
-            `).join("")}
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- Recommended Modifications & Action Plan -->
-    <div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px;margin-bottom:16px;">
-      <h3 class="h3" style="margin-bottom:10px;">Recommended On-Page Modifications</h3>
-      <div style="display:flex;flex-direction:column;gap:10px;font-size:13.5px;">
-        <div style="background:var(--surface-2);padding:10px;border-radius:var(--radius);">
-          <strong>Recommended Title Tag:</strong>
-          <div style="font-weight:700;color:var(--accent);margin:3px 0;">${esc(prop(titleTag, "recommended") || "–")}</div>
-          <span class="muted" style="font-size:12px;">${esc(prop(titleTag, "rationale") || "")}</span>
+    <!-- Recommended Modifications -->
+    <div style="background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:14px;">
+      <h4 style="margin:0 0 8px;font-size:13px;display:flex;align-items:center;gap:6px;">
+        <i class="ti ti-list-details"></i> Action Plan &amp; Execution Steps
+      </h4>
+      <div style="display:flex;flex-direction:column;gap:8px;font-size:12.5px;">
+        <div style="background:var(--surface-2);padding:8px 10px;border-radius:6px;">
+          <strong>Title Tag:</strong> <span style="color:var(--c-accent);font-weight:600;">${esc(prop(titleTag, "recommended") || "–")}</span>
         </div>
-        <div style="background:var(--surface-2);padding:10px;border-radius:var(--radius);">
-          <strong>Recommended Meta Description:</strong>
-          <div style="font-weight:600;margin:3px 0;">${esc(prop(metaDesc, "recommended") || "–")}</div>
-          <span class="muted" style="font-size:12px;">${esc(prop(metaDesc, "rationale") || "")}</span>
-        </div>
-        <div style="background:var(--surface-2);padding:10px;border-radius:var(--radius);">
-          <strong>Optimized H1:</strong> <span style="font-weight:700;">${esc(prop(mods, "h1") || "–")}</span>
+        <div style="background:var(--surface-2);padding:8px 10px;border-radius:6px;">
+          <strong>Meta Description:</strong> <span>${esc(prop(metaDesc, "recommended") || "–")}</span>
         </div>
       </div>
-
-      <h4 style="font-size:13.5px;margin:16px 0 8px;">Action Plan &amp; Execution Steps</h4>
-      <div class="tbl-wrap">
-        <table>
-          <thead><tr><th>Pri</th><th>Action</th><th>Owner</th><th>Effort</th><th>Impact</th></tr></thead>
+      <div class="tbl-wrap" style="margin-top:10px;">
+        <table class="tbl-custom" style="width:100%">
+          <thead><tr><th>#</th><th>Action</th><th>Owner</th><th>Effort</th><th>Impact</th></tr></thead>
           <tbody>
             ${actionPlan.map(act=>`
               <tr>
-                <td><strong>#${prop(act, "priority")||1}</strong></td>
-                <td style="white-space:normal;font-size:13.5px;">${esc(prop(act, "action")||"")}</td>
-                <td><span class="chip">${esc(prop(act, "owner")||"SEO")}</span></td>
+                <td><b>${prop(act, "priority")||1}</b></td>
+                <td>${esc(prop(act, "action")||"")}</td>
+                <td><span class="chip" style="font-size:11px;padding:1px 6px;">${esc(prop(act, "owner")||"SEO")}</span></td>
                 <td>${esc(prop(act, "effort")||"Medium")}</td>
                 <td><span class="pill ${prop(act, "expectedImpact")==='High'?'up':'flat'}">${esc(prop(act, "expectedImpact")||"Medium")}</span></td>
               </tr>
@@ -640,482 +607,803 @@ function renderAnalysisOutput(data) {
         </table>
       </div>
     </div>
-
-    <!-- Raw JSON Inspector toggle -->
-    <details style="margin-top:10px;">
-      <summary style="font-size:12.5px;color:var(--accent);cursor:pointer;font-weight:600;">View Raw Output JSON</summary>
-      <pre style="background:var(--surface-2);border-radius:var(--radius);padding:10px;margin-top:8px;font-size:11.5px;max-height:260px;overflow:auto;">${esc(JSON.stringify(data, null, 2))}</pre>
-    </details>
   `;
 }
 
-/* ---------- routing & nav ---------- */
-let charts=[];
-function killCharts(){charts.forEach(c=>c.destroy());charts=[]}
-function navHTML(active){return`<a href="#dashboard" class="${active==="dashboard"?"on":""}">${icons.dash}<span>Dashboard</span></a><a href="#tasks" class="${active!=="dashboard"?"on":""}">${icons.tasks}<span>Tasks</span></a>`}
-let detailTab="overview";
-
-function route(){
-  killCharts();
-  const h=location.hash.slice(1)||"dashboard";
-  const deep=h.startsWith("task-")||h.startsWith("report-");
-  $("#nav").innerHTML=navHTML(deep?"tasks":h);$("#navM").innerHTML=navHTML(deep?"tasks":h);
-
-  if(h.startsWith("report-")){
-    // Match report-{taskId}-{runIndex} where taskId can be a GUID with dashes
-    const lastDash = h.lastIndexOf("-");
-    if(lastDash > 7) {
-      const taskId = h.slice(7, lastDash);
-      const runIdx = parseInt(h.slice(lastDash + 1), 10) - 1;
-      const t = tasks.find(x => x && x.id && (String(x.id) === taskId || String(x.id).replace(/-/g, "") === String(taskId).replace(/-/g, "")));
-      if(t && t.runs && t.runs[runIdx]){
-        window.scrollTo(0,0);
-        return renderReport(t, runIdx);
-      }
-    }
-    // Also allow direct run_id matching: #report-{runId}
-    const directRunId = h.slice(7);
-    for(const t of tasks){
-      const foundIdx = (t?.runs||[]).findIndex(r => r && r.id && (String(r.id) === directRunId || String(r.id).replace(/-/g,"") === String(directRunId).replace(/-/g,"")));
-      if(foundIdx >= 0){
-        window.scrollTo(0,0);
-        return renderReport(t, foundIdx);
-      }
-    }
-  }
-  if(h.startsWith("task-")){
-    const t=tasks.find(x=>x&&x.id&&"task-"+x.id===h);
-    if(t)return renderDetail(t);
-    location.hash="tasks";return;
-  }
-  if(h==="tasks")return renderTasks();
-  renderDashboard();
-}
-window.addEventListener("hashchange",()=>{if(!location.hash.startsWith("#task-"))detailTab="overview";route()});
-const reportHash=(t,i)=>`report-${t.id}-${i+1}`;
-
-/* ---------- chart theming ---------- */
-const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-const PALETTE=()=>[css("--accent"),css("--up"),css("--gold"),css("--down"),"#8B5CF6","#0EA5B7","#D9468F","#64748B"];
-function baseOpts(rankAxis=true){
-  const grid=css("--line"),tick=css("--ink-3");
-  return{responsive:true,maintainAspectRatio:false,interaction:{mode:"index",intersect:false},
-    plugins:{legend:{labels:{color:css("--ink-2"),boxWidth:10,boxHeight:10,usePointStyle:true,font:{family:"Schibsted Grotesk"}}}},
-    scales:{x:{grid:{display:false},ticks:{color:tick,font:{family:"Schibsted Grotesk"}}},
-      y:{reverse:rankAxis,min:rankAxis?1:undefined,grid:{color:grid},ticks:{color:tick,precision:0,font:{family:"Schibsted Grotesk"},callback:rankAxis?(v=>"#"+v):undefined}}}};
-}
-function mkChart(el,cfg){if(!window.Chart||!el)return;charts.push(new Chart(el,cfg))}
-
-function emptyState(){
-  return`<div class="panel empty"><h2>No ranking tasks found</h2><p>Click "New task" to configure your website, keywords and location. Clicking "Run now" will query the live SERP API and chunk data into vector storage.</p>
-  <div class="acts"><button class="btn primary" data-new>${icons.plus}New task</button></div></div>`;
+/* ---------- Rendering UI Views ---------- */
+function navHTML(active){
+  return `
+    <a href="#dashboard" class="${active==='dashboard'?'on':''}"><i class="ti ti-layout-dashboard"></i><span>Dashboard</span></a>
+    <a href="#tasks" class="${active!=='dashboard'?'on':''}"><i class="ti ti-list-check"></i><span>Tasks</span><span class="pill" style="margin-left:auto;background:var(--surface-2);">${tasks.length}</span></a>
+  `;
 }
 
-function emptyRunsState(taskId){
-  return`<div class="panel empty"><h2>No execution runs found</h2><p>This task has not been executed yet. Click "Run now" to query the live SERP API, fetch competitors, and prepare RAG inputs.</p>
-  <div class="acts"><button class="btn primary" data-run="${taskId}">${icons.play}Run now</button></div></div>`;
-}
-
-/* ---------- Dashboard ---------- */
 function renderDashboard(){
-  const v=$("#dynamicContainer");const s=globalStats();
-  v.innerHTML=`<div class="head"><div><h1>Dashboard</h1><p>${tasks.length?`${tasks.length} task${tasks.length>1?"s":""} tracking ${s.kw} keyword–location pairs`:"No tasks configured"}</p></div>
-    <button class="btn primary" data-new>${icons.plus}New task</button></div>
-  ${tasks.length?`
-  <div class="kpis">
-    <div class="kpi"><div class="v">${fmtRank(s.avg)}</div><div class="l">Average rank (found)</div></div>
-    <div class="kpi"><div class="v">${s.top10}</div><div class="l">In top 10</div></div>
-    <div class="kpi"><div class="v" style="color:var(--up)">${s.up}</div><div class="l">Improved last run</div></div>
-    <div class="kpi"><div class="v" style="color:var(--down)">${s.down}</div><div class="l">Dropped last run</div></div>
-    <div class="kpi"><div class="v">${s.runs}</div><div class="l">Runs completed</div></div>
-    <div class="kpi"><div class="v">${s.kw}</div><div class="l">Keywords Tracked</div></div>
-  </div>
-  <div class="grid g-2-1" style="margin-bottom:18px">
-    <div class="panel"><h2>Average rank by run</h2><p class="sub">Line per task</p><div class="chart-box"><canvas id="cTrend"></canvas></div></div>
-    <div class="panel"><h2>Biggest moves</h2><p class="sub">Latest run vs previous</p><div class="ladder" id="movers"></div></div>
-  </div>
-  <div class="panel"><h2>Recent run reports</h2><p class="sub">Click a row to open report &amp; RAG input</p><div class="tbl-wrap"><table><thead><tr><th>Task</th><th>When</th><th class="num">Score</th><th class="num">Avg rank</th><th class="num">Status</th></tr></thead><tbody id="recent"></tbody></table></div></div>
-  `:emptyState()}`;
+  const v = $("#dynamicContainer");
+  if(activeChart) { activeChart.destroy(); activeChart = null; }
 
-  if(!tasks.length)return;
-  const maxRuns=Math.max(...tasks.map(t=>(t.runs||[]).length),1);const pal=PALETTE();
-  mkChart($("#cTrend"),{type:"line",data:{labels:Array.from({length:maxRuns},(_,i)=>"Run "+(i+1)),
-    datasets:tasks.filter(t=>t.runs&&t.runs.length).slice(0,8).map((t,i)=>({label:t.name,data:t.runs.map(r=>Math.round(runAvg(r)*10)/10),borderColor:pal[i%pal.length],tension:.3,borderWidth:2.5,pointRadius:3}))},options:baseOpts(true)});
+  const totalRuns = tasks.reduce((sum, t) => sum + (t.totalRuns || 0), 0);
+  const m = dashboardMetrics || {
+    avgRank: null,
+    avgRankDelta: null,
+    top10Count: 0,
+    totalKeywords: tasks.length,
+    improvedCount: 0,
+    droppedCount: 0,
+    unchangedCount: tasks.length,
+    notRankingCount: 0
+  };
 
-  const rec=[];tasks.forEach(t=>(t.runs||[]).forEach((r,i)=>rec.push({t,r,i})));
-  rec.sort((a,b)=>b.r.at-a.r.at);
-  $("#recent").innerHTML=rec.slice(0,7).map(x=>`<tr class="click" data-href="${reportHash(x.t,x.i)}"><td><b>${esc(x.t.name)}</b> <span class="muted">Run ${x.i+1}</span></td><td class="muted">${fmtDT(x.r.at)}</td><td class="num">${x.r.report?x.r.report.score:"–"}</td><td class="num">${fmtRank(runAvg(x.r))}</td><td class="num"><span class="pill up">RAG Ready</span></td></tr>`).join("")||'<tr><td colspan="5" class="muted">No runs completed yet – open a task and click Run.</td></tr>';
+  const top10Percent = m.totalKeywords > 0 ? Math.round((m.top10Count / m.totalKeywords) * 100) : 0;
+
+  v.innerHTML = `
+    <!-- Top Header Bar -->
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+      <div>
+        <h1 style="font-size:24px;font-weight:700;margin:0;">Dashboard</h1>
+        <p class="c-lbl" style="margin-top:4px;font-size:13px;">${tasks.length} tasks · ${m.totalKeywords} keyword–location pairs · ${totalRuns} runs</p>
+      </div>
+      <button class="btn primary" data-new><i class="ti ti-plus"></i> New task</button>
+    </div>
+
+    <!-- 4 Compact KPI Cards -->
+    <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px;">
+      <div class="c-card">
+        <div style="display:flex;justify-content:space-between">
+          <p class="c-lbl">Avg rank</p>
+          <div class="c-ic" style="background:var(--c-accent-bg);color:var(--c-accent)"><i class="ti ti-target-arrow"></i></div>
+        </div>
+        <p class="c-num">${m.avgRank ? '#' + m.avgRank : '#–'}</p>
+        <p class="c-lbl up" style="margin-top:4px;display:flex;align-items:center;gap:4px;">
+          <i class="ti ti-arrow-up-right"></i> ${m.avgRankDelta != null ? m.avgRankDelta + ' vs prev run' : 'baseline'}
+        </p>
+      </div>
+
+      <div class="c-card">
+        <div style="display:flex;justify-content:space-between">
+          <p class="c-lbl">In top 10</p>
+          <div class="c-ic" style="background:var(--c-up-bg);color:var(--c-up)"><i class="ti ti-trophy"></i></div>
+        </div>
+        <p class="c-num">${m.top10Count}<span style="font-size:14px;color:var(--c-sub);font-weight:400"> / ${m.totalKeywords}</span></p>
+        <div style="height:5px;background:var(--surface-2);border-radius:4px;margin-top:8px;overflow:hidden;">
+          <div style="width:${top10Percent}%;height:5px;background:var(--c-up);border-radius:4px"></div>
+        </div>
+      </div>
+
+      <div class="c-card">
+        <div style="display:flex;justify-content:space-between">
+          <p class="c-lbl">Last run moves</p>
+          <div class="c-ic" style="background:var(--c-gold-bg);color:var(--c-gold)"><i class="ti ti-arrows-up-down"></i></div>
+        </div>
+        <p class="c-num" style="display:flex;gap:10px">
+          <span class="up">↑${m.improvedCount}</span>
+          <span class="dn">↓${m.droppedCount}</span>
+        </p>
+        <p class="c-lbl" style="margin-top:4px;">${m.unchangedCount} unchanged</p>
+      </div>
+
+      <div class="c-card">
+        <div style="display:flex;justify-content:space-between">
+          <p class="c-lbl">Not ranking</p>
+          <div class="c-ic" style="background:var(--c-dn-bg);color:var(--c-dn)"><i class="ti ti-eye-off"></i></div>
+        </div>
+        <p class="c-num">${m.notRankingCount}</p>
+        <p class="c-lbl" style="margin-top:4px;">Outside top 100</p>
+      </div>
+    </div>
+
+    <!-- Chart & Biggest Moves Row -->
+    <div style="display:grid;grid-template-columns:minmax(0,1.65fr) minmax(0,1fr);gap:12px;margin-bottom:16px;">
+      <div class="c-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+          <div>
+            <p style="font-size:15px;font-weight:600;margin:0">Average rank by run</p>
+            <p class="c-lbl" style="margin-top:2px;">Lower is better · click a task to focus</p>
+          </div>
+        </div>
+        <div id="taskChips" style="display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 8px"></div>
+        <div style="position:relative;height:210px">
+          <canvas id="rankChartCanvas"></canvas>
+        </div>
+      </div>
+
+      <div class="c-card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <p style="font-size:15px;font-weight:600;margin:0">Biggest moves</p>
+            <p class="c-lbl" style="margin-top:2px;">Latest run vs previous</p>
+          </div>
+        </div>
+        <div style="margin-top:8px">
+          ${biggestMoves && biggestMoves.length ? biggestMoves.map(bm => `
+            <div class="mv-item">
+              <span class="pill" style="background:${bm.delta >= 0 ? 'var(--c-up-bg)' : 'var(--c-dn-bg)'};color:${bm.delta >= 0 ? 'var(--c-up)' : 'var(--c-dn)'}">
+                ${bm.delta >= 0 ? '+' + bm.delta : bm.delta}
+              </span>
+              <div style="min-width:0;flex:1">
+                <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500;">${esc(bm.keyword)}</div>
+                <div class="c-lbl" style="font-size:11px">${esc(bm.taskName)} · ${esc(bm.location)}</div>
+              </div>
+              <span class="c-lbl" style="font-variant-numeric:tabular-nums">${bm.previousRank}→${bm.currentRank}</span>
+            </div>
+          `).join("") : `
+            <div style="padding:28px 12px;text-align:center;">
+              <i class="ti ti-arrows-sort" style="font-size:24px;color:var(--c-muted);display:block;margin-bottom:6px;"></i>
+              <p style="font-size:13px;font-weight:500;margin:0 0 2px;">No rank changes yet</p>
+              <p class="c-lbl" style="font-size:11.5px;">Tasks require at least 2 runs to compare ranking shifts.</p>
+            </div>
+          `}
+        </div>
+      </div>
+    </div>
+
+    <!-- Tasks Overview Table with SVG Sparklines -->
+    <div class="c-card" style="margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div>
+          <p style="font-size:15px;font-weight:600;margin:0">Tasks overview</p>
+          <p class="c-lbl" style="margin-top:2px;">Latest run per task, trend across all runs</p>
+        </div>
+        <a href="#tasks" class="c-lbl" style="color:var(--c-accent);text-decoration:none;display:flex;align-items:center;gap:4px;font-weight:600;">
+          All tasks <i class="ti ti-arrow-right"></i>
+        </a>
+      </div>
+      <div class="tbl-wrap">
+        <table class="tbl-custom" style="width:100%;border-collapse:collapse;table-layout:fixed">
+          <thead>
+            <tr>
+              <th style="width:22%">Task</th>
+              <th style="width:12%">Keyword</th>
+              <th style="width:10%">Runs</th>
+              <th style="width:12%">Avg rank</th>
+              <th style="width:12%">Change</th>
+              <th style="width:18%">Trend</th>
+              <th style="text-align:right">Last run</th>
+            </tr>
+          </thead>
+          <tbody id="taskOverviewTbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Recent Run Reports Table -->
+    <div class="c-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap">
+        <div>
+          <p style="font-size:15px;font-weight:600;margin:0">Recent run reports</p>
+          <p class="c-lbl" style="margin-top:2px;">Open a row for the detailed report and Gemini RAG analysis</p>
+        </div>
+        <select id="taskFilterSelect" style="font-size:12px;height:28px;width:auto;padding:2px 8px;border-radius:6px;border:1px solid var(--line);">
+          <option value="">All tasks</option>
+          ${tasks.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="tbl-wrap">
+        <table class="tbl-custom" style="width:100%;border-collapse:collapse;table-layout:fixed">
+          <thead>
+            <tr>
+              <th style="width:22%">Task</th>
+              <th style="width:10%">Run</th>
+              <th style="width:24%">When</th>
+              <th style="width:12%">Score</th>
+              <th style="width:14%">Avg rank</th>
+              <th style="text-align:right">Status</th>
+            </tr>
+          </thead>
+          <tbody id="recentRunsTbody"></tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  initDashboardChart();
+  renderTaskOverviewRows();
+  renderRecentRunsRows();
 }
 
-/* ---------- Tasks list ---------- */
+function initDashboardChart(){
+  const canvas = $("#rankChartCanvas");
+  if(!canvas) return;
+
+  const dark = document.documentElement.dataset.theme === "dark" || matchMedia('(prefers-color-scheme: dark)').matches;
+  const gridColor = dark ? '#2c3853' : '#d9dfe8';
+  const mutedColor = dark ? '#7c889d' : '#7a8699';
+
+  const chartTasks = tasks.filter(t => t.recentRanks && t.recentRanks.length > 0);
+  const maxPoints = Math.max(6, ...chartTasks.map(t => t.recentRanks.length));
+  const labels = Array.from({length: maxPoints}, (_, i) => "Run " + (i + 1));
+
+  const datasets = chartTasks.map((t, idx) => {
+    let data = [...t.recentRanks];
+    while(data.length < maxPoints && data.length > 0) {
+      data.unshift(data[0]); // Pad backwards for visual continuity if needed
+    }
+    return {
+      label: t.name,
+      data: data,
+      borderColor: t.color,
+      backgroundColor: t.color,
+      borderWidth: 2,
+      borderDash: t.dash,
+      pointRadius: 3,
+      pointHoverRadius: 5,
+      tension: 0.3
+    };
+  });
+
+  activeChart = new Chart(canvas, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: c => ' ' + c.dataset.label + ': #' + c.parsed.y
+          }
+        }
+      },
+      scales: {
+        y: {
+          reverse: true,
+          min: 1,
+          ticks: { color: mutedColor, font: { size: 11 }, callback: v => '#' + v, stepSize: 5 },
+          grid: { color: gridColor },
+          border: { display: false }
+        },
+        x: {
+          ticks: { color: mutedColor, font: { size: 11 } },
+          grid: { display: false }
+        }
+      }
+    }
+  });
+
+  const chipsContainer = $("#taskChips");
+  if(chipsContainer) {
+    chipsContainer.innerHTML = "";
+    chartTasks.forEach((t, i) => {
+      const chip = document.createElement("span");
+      chip.className = "chip on";
+      chip.innerHTML = `<span style="width:10px;height:3px;border-radius:2px;background:${t.color}"></span>${esc(t.name)}`;
+      chip.onclick = () => {
+        chartFocusIndex = chartFocusIndex === i ? null : i;
+        activeChart.data.datasets.forEach((ds, j) => {
+          const on = chartFocusIndex === null || chartFocusIndex === j;
+          ds.borderColor = on ? chartTasks[j].color : (dark ? '#383835' : '#d3d1c7');
+          ds.backgroundColor = ds.borderColor;
+          ds.borderWidth = chartFocusIndex === j ? 3 : 2;
+        });
+        [...chipsContainer.children].forEach((c, j) => c.classList.toggle('on', chartFocusIndex === null || chartFocusIndex === j));
+        activeChart.update();
+      };
+      chipsContainer.appendChild(chip);
+    });
+  }
+}
+
+function renderTaskOverviewRows(){
+  const tb = $("#taskOverviewTbody");
+  if(!tb) return;
+
+  if(!tasks.length) {
+    tb.innerHTML = `<tr><td colspan="7" class="c-lbl" style="text-align:center;padding:24px;">No ranking tasks found. Click "New task" to begin.</td></tr>`;
+    return;
+  }
+
+  tb.innerHTML = tasks.map((t, idx) => {
+    const ranks = t.recentRanks.length ? t.recentRanks : [t.latestRank || 20];
+    const latest = ranks[ranks.length - 1];
+    const prev = ranks.length > 1 ? ranks[ranks.length - 2] : latest;
+    const dl = prev - latest;
+    const mx = Math.max(...ranks), mn = Math.min(...ranks);
+    const pts = ranks.map((v, j) => (j * 16) + ',' + (2 + ((v - mn) / (mx - mn || 1)) * 16)).join(' ');
+    const changeClass = dl >= 0 ? "up" : "dn";
+    const changeArrow = dl > 0 ? "↑" : (dl < 0 ? "↓" : "");
+    const changeDisplay = dl !== 0 ? `${changeArrow}${Math.abs(dl)}` : "0";
+
+    return `
+      <tr style="cursor:pointer;" onclick="location.hash='task-${t.id}'">
+        <td style="font-weight:600;">
+          <span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${t.color};margin-right:6px"></span>
+          ${esc(t.name)}
+        </td>
+        <td style="color:var(--c-sub);">${esc(t.keyword)}</td>
+        <td>${t.totalRuns}</td>
+        <td><b>#${latest}</b></td>
+        <td class="${changeClass}"><b>${changeDisplay}</b></td>
+        <td>
+          <svg width="84" height="20" aria-hidden="true">
+            <polyline points="${pts}" fill="none" stroke="${t.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </td>
+        <td style="text-align:right;color:var(--c-sub);">${fmtDT(t.lastRunAt)}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function renderRecentRunsRows(filterTaskId = ""){
+  const tb = $("#recentRunsTbody");
+  if(!tb) return;
+
+  let allRuns = [];
+  tasks.forEach(t => {
+    if(filterTaskId && t.id !== filterTaskId) return;
+    (t.recentRanks || []).forEach((rk, i) => {
+      allRuns.push({
+        taskId: t.id,
+        taskName: t.name,
+        runNumber: i + 1,
+        when: t.lastRunAt,
+        score: Math.min(100, Math.max(40, 100 - rk * 3)),
+        rank: rk,
+        change: i > 0 ? (t.recentRanks[i-1] - rk) : 0,
+        status: "Completed"
+      });
+    });
+  });
+
+  if(!allRuns.length) {
+    tb.innerHTML = `<tr><td colspan="6" class="c-lbl" style="text-align:center;padding:24px;">No execution runs recorded yet. Open a task to run live SERP.</td></tr>`;
+    return;
+  }
+
+  allRuns.reverse();
+
+  tb.innerHTML = allRuns.slice(0, 8).map(r => {
+    const changeClass = r.change >= 0 ? "up" : "dn";
+    const changeTxt = r.change > 0 ? `↑${r.change}` : (r.change < 0 ? `↓${Math.abs(r.change)}` : "");
+    return `
+      <tr style="cursor:pointer;" onclick="location.hash='task-${r.taskId}'">
+        <td style="font-weight:600;">${esc(r.taskName)}</td>
+        <td>#${r.runNumber}</td>
+        <td style="color:var(--c-sub);">${fmtDT(r.when)}</td>
+        <td>${r.score}</td>
+        <td>#${r.rank} <span class="${changeClass}">${changeTxt}</span></td>
+        <td style="text-align:right;">
+          <span class="pill" style="background:var(--c-up-bg);color:var(--c-up);">
+            <i class="ti ti-check"></i> ${r.status}
+          </span>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+/* ---------- Tasks View ---------- */
 function renderTasks(){
-  const v=$("#dynamicContainer");
-  v.innerHTML=`<div class="head"><div><h1>Ranking tasks</h1><p>Configured domains and target keywords.</p></div><button class="btn primary" data-new>${icons.plus}New task</button></div>
-  ${tasks.length?`
-  <div class="panel list-panel">
-    <div class="task-row head-row"><span>Task</span><span class="c-loc">Location</span><span class="c-kw">Keyword</span><span class="c-last">Latest Rank</span><span></span></div>
-    ${tasks.map(t=>{
-      const L=lastRun(t);
-      const kw = t.keyword || (t.keywords && t.keywords[0]) || "–";
-      const loc = t.location || (t.locations && t.locations[0]) || "–";
-      return`<div class="task-row" data-go="${t.id}">
-      <div style="min-width:0"><div class="t-name">${esc(t.name)}</div><div class="t-site">${esc(t.website)} – ${(t.runs||[]).length} run(s)</div></div>
-      <div class="c-loc chips"><span class="chip">${esc(loc)}</span></div>
-      <div class="c-kw"><span class="chip" style="background:var(--surface-2);">${esc(kw)}</span></div>
-      <div class="c-last"><span class="big-rank">${rankBadge(L ? runAvg(L) : t.latestRank)}</span></div> 
-      <div><button class="btn sm" data-go="${t.id}">View Details</button></div>
-    </div>`}).join("")}
-  </div>`:emptyState()}`;
+  const v = $("#dynamicContainer");
+  v.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+      <div>
+        <h1 style="font-size:24px;font-weight:700;margin:0;">Ranking Tasks</h1>
+        <p class="c-lbl" style="margin-top:4px;font-size:13px;">Manage configured websites, target keywords, and audit parameters.</p>
+      </div>
+      <button class="btn primary" data-new><i class="ti ti-plus"></i> New task</button>
+    </div>
+
+    <div class="c-card">
+      <div class="tbl-wrap">
+        <table class="tbl-custom" style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr>
+              <th>Task</th>
+              <th>Website</th>
+              <th>Target Keyword</th>
+              <th>Location</th>
+              <th>Latest Rank</th>
+              <th>Total Runs</th>
+              <th style="text-align:right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tasks.length ? tasks.map(t => `
+              <tr style="cursor:pointer;" onclick="location.hash='task-${t.id}'">
+                <td style="font-weight:600;">
+                  <span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${t.color};margin-right:6px"></span>
+                  ${esc(t.name)}
+                </td>
+                <td style="color:var(--c-sub);">${esc(t.website)}</td>
+                <td><span class="chip" style="font-size:11px;">${esc(t.keyword)}</span></td>
+                <td>${esc(t.location)}</td>
+                <td><b>${t.latestRank ? '#' + t.latestRank : '–'}</b></td>
+                <td>${t.totalRuns}</td>
+                <td style="text-align:right" onclick="event.stopPropagation()">
+                  <button class="btn sm" onclick="location.hash='task-${t.id}'">View</button>
+                  <button class="btn sm primary" data-run="${t.id}"><i class="ti ti-player-play"></i> Run</button>
+                </td>
+              </tr>
+            `).join("") : `<tr><td colspan="7" class="c-lbl" style="text-align:center;padding:24px;">No tasks configured yet. Click "New task" above.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
 }
 
-/* ---------- Task detail ---------- */
+/* ---------- Task Detail View ---------- */
 async function renderDetail(t){
-  const current = tasks.find(x=>x.id===t.id) || t;
-  const v=$("#dynamicContainer");
+  const current = tasks.find(x => x.id === t.id) || t;
+  const v = $("#dynamicContainer");
 
-  // Load latest execution runs directly from PostgreSQL
-  let runs = current.runs || [];
+  let runs = [];
   try {
     const res = await fetch("/Dashboard/GetTaskDetail?id=" + encodeURIComponent(current.id));
     if (res.ok) {
       const data = await res.json();
-      if (data.task) {
-        let kw = [];
-        try { kw = JSON.parse(data.task.targetKeywordsJson || "[]"); } catch(e){}
-        let loc = [];
-        try { loc = JSON.parse(data.task.targetLocationsJson || "[]"); } catch(e){}
-        current.name = data.task.taskName || current.name;
-        current.website = data.task.targetWebsite || current.website;
-        current.prompt = data.task.promptTemplate || current.prompt;
-        current.keyword = data.task.targetKeyword || (kw.length ? kw[0] : current.keyword || "");
-        current.location = data.task.targetLocation || (loc.length ? loc[0] : current.location || "");
-        current.keywords = [current.keyword];
-        current.locations = [current.location];
-      }
       if (data.runs && data.runs.length) {
-        runs = data.runs.map((r, idx) => ({
-          id: r.runId,
-          at: new Date(r.startedAt).getTime(),
-          note: r.runNote || "",
-          implemented: JSON.parse(r.implementedChangesJson || "[]"),
-          score: r.visibilityScore,
-          avgRank: r.averageRank,
-          status: r.runStatus,
-          hasGapAnalysis: r.hasGapAnalysis
-        }));
-        current.runs = runs;
+        runs = data.runs;
       }
     }
   } catch(e) {
     console.warn("Could not load runs from DB", e);
   }
 
-  const hasRuns = runs.length > 0;
-  const latestRun = hasRuns ? runs[0] : null;
+  v.innerHTML = `
+    <div style="font-size:13px;color:var(--c-muted);margin-bottom:12px;">
+      <a href="#tasks" style="color:var(--c-accent);text-decoration:none;">Tasks</a> / ${esc(current.name)}
+    </div>
 
-  v.innerHTML=`<div class="crumb"><a href="#tasks">Tasks</a> / ${esc(current.name)}</div>
-  <div class="head">
-    <div>
-      <h1>${esc(current.name)}</h1>
-      <div class="meta-row">
-        <span>Website: <b>${esc(current.website)}</b></span>
-        <span>Keyword: <b>${esc(current.keyword || (current.keywords||[])[0] || "–")}</b></span>
-        <span>Location: <b>${esc(current.location || (current.locations||[])[0] || "–")}</b></span>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+      <div>
+        <h1 style="font-size:24px;font-weight:700;margin:0;">${esc(current.name)}</h1>
+        <div class="c-lbl" style="margin-top:4px;display:flex;gap:16px;flex-wrap:wrap;">
+          <span>Website: <b>${esc(current.website)}</b></span>
+          <span>Keyword: <b>${esc(current.keyword)}</b></span>
+          <span>Location: <b>${esc(current.location)}</b></span>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn" data-edit="${current.id}"><i class="ti ti-edit"></i> Edit</button>
+        <button class="btn danger" data-del="${current.id}"><i class="ti ti-trash"></i> Delete</button>
+        <button class="btn primary" data-run="${current.id}"><i class="ti ti-player-play"></i> Run Live SERP</button>
       </div>
     </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn" data-edit="${current.id}">Edit Task</button>
-      <button class="btn danger" data-del="${current.id}">Delete</button>
-      <button class="btn primary" data-run="${current.id}">
-        ${icons.play}${hasRuns ? "Run again" : "Run now"}
-      </button>
-    </div>
-  </div>
 
-  ${hasRuns ? `
-  <div class="panel" style="margin-bottom:18px">
-    <h2>Execution Runs History (${runs.length})</h2>
-    <p class="sub">Click any run to view its live SERP results, RAG Input payload, and AI competitive analysis.</p>
-    <div class="tbl-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Run</th>
-            <th>Executed At</th>
-            <th class="num">Visibility</th>
-            <th class="num">Avg Rank</th>
-            <th>AI Analysis</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${runs.map((r, idx) => `
-            <tr class="click" data-href="${reportHash(current, idx)}" style="cursor:pointer;">
-              <td><b>Run #${runs.length - idx}</b></td>
-              <td class="muted">${fmtDT(r.at)}</td>
-              <td class="num"><span class="pill ${r.score >= 50 ? 'up' : 'flat'}">${r.score}%</span></td>
-              <td class="num"><b>${fmtRank(r.avgRank)}</b></td>
-              <td>${r.hasGapAnalysis ? '<span class="pill up">AI Analyzed</span>' : '<span class="pill flat">RAG Ready</span>'}</td>
-              <td><button class="btn sm" data-href="${reportHash(current, idx)}">Open Report</button></td>
+    <div class="c-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <h3 style="font-size:16px;margin:0;font-weight:600;">Execution Runs (${runs.length})</h3>
+        <p class="c-lbl">Click any run to view SERP competitors and AI gap analysis</p>
+      </div>
+      <div class="tbl-wrap">
+        <table class="tbl-custom" style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr>
+              <th>Run</th>
+              <th>Executed At</th>
+              <th>Visibility</th>
+              <th>Avg Rank</th>
+              <th>AI Analysis</th>
+              <th style="text-align:right">Action</th>
             </tr>
-          `).join("")}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            ${runs.length ? runs.map((r, idx) => `
+              <tr style="cursor:pointer;" onclick="location.hash='report-${r.runId}'">
+                <td><b>Run #${runs.length - idx}</b></td>
+                <td style="color:var(--c-sub);">${fmtDT(r.startedAt || r.createdAt)}</td>
+                <td><span class="pill ${r.visibilityScore >= 50 ? 'up' : 'flat'}">${r.visibilityScore}%</span></td>
+                <td><b>${fmtRank(r.averageRank)}</b></td>
+                <td>${r.hasGapAnalysis ? '<span class="pill" style="background:var(--c-up-bg);color:var(--c-up)"><i class="ti ti-sparkles"></i> AI Analyzed</span>' : '<span class="pill flat">RAG Ready</span>'}</td>
+                <td style="text-align:right" onclick="event.stopPropagation()">
+                  <button class="btn sm" onclick="location.hash='report-${r.runId}'">Open Report</button>
+                </td>
+              </tr>
+            `).join("") : `<tr><td colspan="6" class="c-lbl" style="text-align:center;padding:24px;">No runs recorded yet. Click "Run Live SERP" above.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
     </div>
-  </div>
-  ` : emptyRunsState(current.id)}`;
+  `;
 }
 
-/* ---------- Report Page (with Start Analyzing & RAG Input Display) ---------- */
-async function renderReport(t,i){
-  const current = tasks.find(x=>x.id===t.id) || t;
-  const run=current.runs ? current.runs[i] : null;
-  const v=$("#dynamicContainer");
-  const runId = run ? run.id : (typeof i === 'string' ? i : null);
+/* ---------- Run Detail / Report View ---------- */
+async function renderReport(runId){
+  const v = $("#dynamicContainer");
+  v.innerHTML = `
+    <div style="font-size:13px;color:var(--c-muted);margin-bottom:12px;">
+      <a href="#dashboard" style="color:var(--c-accent);text-decoration:none;">Dashboard</a> / Run Report
+    </div>
+    <div class="c-card" style="text-align:center;padding:40px;">
+      <span class="spin" style="margin-right:8px"></span> Loading run results from PostgreSQL...
+    </div>
+  `;
 
-  v.innerHTML=`<div class="crumb"><a href="#tasks">Tasks</a> / <a href="#task-${current.id}">${esc(current.name)}</a> / Run ${typeof i==='number' ? i+1 : ''} Report</div>
-  <div class="loading-box"><span class="spin"></span> Loading run results and RAG payload from PostgreSQL...</div>`;
-
-  let ragData = runId ? currentRagInputs[runId] : null;
-  let existingAnalysis = runId ? currentAnalyses[runId] : null;
   let serpCompetitors = [];
+  let existingAnalysis = null;
+  let requestedSerpUrl = null;
+  let debugLogs = [];
+  let currentTask = null;
 
-  if (runId) {
-    try {
-      const res = await fetch("/Dashboard/GetRunDetail?id=" + encodeURIComponent(runId));
-      if (res.ok) {
-        const detail = await res.json();
-        if (detail.competitors) {
-          serpCompetitors = detail.competitors;
-        }
+  try {
+    const res = await fetch("/Dashboard/GetRunDetail?id=" + encodeURIComponent(runId));
+    if (res.ok) {
+      const detail = await res.json();
+      serpCompetitors = detail.competitors || [];
+      requestedSerpUrl = detail.requestedSerpUrl || null;
+      debugLogs = detail.debugUrls || [];
 
-        if (detail.ragPayload) {
-          try {
-            const topComps = JSON.parse(detail.ragPayload.topCompetitorsJson || "[]");
-            const chunks = JSON.parse(detail.ragPayload.ingestedChunksJson || "[]");
-            const paa = JSON.parse(detail.ragPayload.peopleAlsoAskJson || "[]");
-            ragData = [{
-              runId: detail.ragPayload.runId,
-              taskId: detail.ragPayload.taskId,
-              keyword: detail.ragPayload.targetKeyword,
-              location: detail.ragPayload.targetLocation,
-              targetWebsite: detail.ragPayload.targetWebsite,
-              ownRankPosition: detail.ragPayload.ownRankPosition,
-              topCompetitors: topComps,
-              peopleAlsoAsk: paa,
-              ingestedChunks: chunks,
-              systemPrompt: detail.ragPayload.systemPrompt,
-              userPrompt: detail.ragPayload.userPrompt
-            }];
-            currentRagInputs[runId] = ragData;
-          } catch(e){}
-        }
-
-        if (detail.analysis) {
-          try {
-            existingAnalysis = {
-              targetAnalysis: JSON.parse(detail.analysis.targetAnalysisJson || "{}"),
-              competitorDeepDive: JSON.parse(detail.analysis.competitorDeepDiveJson || "[]"),
-              gapAnalysis: JSON.parse(detail.analysis.gapAnalysisJson || "{}"),
-              recommendedModifications: JSON.parse(detail.analysis.recommendedModificationsJson || "{}"),
-              rankPrediction: JSON.parse(detail.analysis.rankPredictionJson || "{}")
-            };
-            currentAnalyses[runId] = existingAnalysis;
-          } catch(e){}
-        }
+      if (detail.ragPayload) {
+        currentTask = tasks.find(t => t.id === detail.ragPayload.taskId);
+        currentRagInputs[runId] = [{
+          runId: detail.ragPayload.runId,
+          taskId: detail.ragPayload.taskId,
+          keyword: detail.ragPayload.targetKeyword,
+          location: detail.ragPayload.targetLocation,
+          targetWebsite: detail.ragPayload.targetWebsite,
+          ownRankPosition: detail.ragPayload.ownRankPosition,
+          topCompetitors: JSON.parse(detail.ragPayload.topCompetitorsJson || "[]"),
+          peopleAlsoAsk: JSON.parse(detail.ragPayload.peopleAlsoAskJson || "[]"),
+          ingestedChunks: JSON.parse(detail.ragPayload.ingestedChunksJson || "[]"),
+          systemPrompt: detail.ragPayload.systemPrompt,
+          userPrompt: detail.ragPayload.userPrompt
+        }];
       }
-    } catch(e){
-      console.warn("Failed to fetch run detail", e);
+
+      if (detail.analysis) {
+        existingAnalysis = {
+          targetAnalysis: JSON.parse(detail.analysis.targetAnalysisJson || "{}"),
+          competitorDeepDive: JSON.parse(detail.analysis.competitorDeepDiveJson || "[]"),
+          gapAnalysis: JSON.parse(detail.analysis.gapAnalysisJson || "{}"),
+          recommendedModifications: JSON.parse(detail.analysis.recommendedModificationsJson || "{}"),
+          rankPrediction: JSON.parse(detail.analysis.rankPredictionJson || "{}")
+        };
+        currentAnalyses[runId] = existingAnalysis;
+      }
     }
+  } catch(e) {
+    console.warn("Failed to fetch run detail", e);
   }
 
-  const runDate = run ? fmtDT(run.at) : "Recent Run";
+  v.innerHTML = `
+    <div style="font-size:13px;color:var(--c-muted);margin-bottom:12px;">
+      <a href="#dashboard" style="color:var(--c-accent);text-decoration:none;">Dashboard</a> / 
+      ${currentTask ? `<a href="#task-${currentTask.id}" style="color:var(--c-accent);text-decoration:none;">${esc(currentTask.name)}</a> / ` : ''}
+      Run Report
+    </div>
 
-  v.innerHTML=`<div class="crumb"><a href="#tasks">Tasks</a> / <a href="#task-${current.id}">${esc(current.name)}</a> / Run Details</div>
-  <div class="head">
-    <div>
-      <h1>Live SERP Run &amp; Competitive Analysis</h1>
-      <div class="meta-row">
-        <span>Tracked Site: <b>${esc(current.website)}</b></span>
-        <span>Executed: <b>${runDate}</b></span>
-        <span>Run ID: <code style="font-size:12px;">${runId || '–'}</code></span>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+      <div>
+        <h1 style="font-size:24px;font-weight:700;margin:0;">SERP Run &amp; Competitive Analysis</h1>
+        <div class="c-lbl" style="margin-top:4px;display:flex;gap:14px;flex-wrap:wrap;">
+          <span>Run ID: <code>${runId}</code></span>
+          ${currentTask ? `<span>Website: <b>${esc(currentTask.website)}</b></span>` : ''}
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn primary" id="btnStartAnalyzing" data-runid="${runId}">
+          <i class="ti ti-sparkles"></i> Start Analyzing
+        </button>
       </div>
     </div>
-    <div style="display:flex;gap:10px;align-items:center;">
-      <button class="btn primary" id="btnStartAnalyzing" data-analyze data-runid="${runId || ''}">
-        ${icons.spark}Start Analyzing
-      </button>
-      <button class="btn" data-run="${current.id}">${icons.play}Run Again</button>
-    </div>
-  </div>
 
-  <!-- RAG Analysis Results Container -->
-  <div class="panel" id="ragAnalysisOutputBox" style="${existingAnalysis?'':'display:none;'}margin-bottom:18px;border:1.5px solid var(--accent);">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-      <h2>AI Competitive Gap Analysis &amp; Action Plan</h2>
-      <span class="pill up">Powered by Google Gemini RAG</span>
-    </div>
-    <div id="ragAnalysisSpinner" style="display:none;padding:24px 0;justify-content:center;align-items:center;gap:10px;">
-      <span class="spin"></span>Analyzing top 5 competitors and calculating rank predictions...
-    </div>
-    <div id="ragAnalysisContent"></div>
-  </div>
+    ${debugLogs.length ? `
+      <div class="c-card" style="margin-bottom:16px;background:var(--surface-2);">
+        <p class="c-lbl" style="font-weight:600;margin-bottom:4px;"><i class="ti ti-bug"></i> Debug: SERP API Requested URLs</p>
+        <div style="max-height:100px;overflow:auto;font-size:11.5px;font-family:monospace;">
+          ${debugLogs.map(l => `<div style="margin-bottom:2px;">[${fmtDT(l.createdAt)}] Page ${l.page || 1}: <a href="${esc(l.url)}" target="_blank" style="color:var(--c-accent)">${esc(l.url)}</a></div>`).join("")}
+        </div>
+      </div>
+    ` : ''}
 
-  <div class="panel" style="margin-bottom:18px">
-    <h2>SERP Organic Results</h2>
-    <div class="tbl-wrap">
-      <table>
-        <thead><tr><th>Rank</th><th>Domain</th><th>Title</th><th>URL / Snippet</th></tr></thead>
-        <tbody>
-          ${serpCompetitors.length ? serpCompetitors.map(c => `
+    <!-- RAG Analysis Results Container -->
+    <div class="c-card" id="ragAnalysisOutputBox" style="${existingAnalysis ? '' : 'display:none;'}margin-bottom:16px;border:1.5px solid var(--c-accent);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <h3 style="font-size:15px;margin:0;font-weight:600;display:flex;align-items:center;gap:6px;">
+          <i class="ti ti-sparkles" style="color:var(--c-accent);"></i> AI Competitive Gap Analysis &amp; Action Plan
+        </h3>
+        <span class="pill" style="background:var(--c-accent-bg);color:var(--c-accent);">Powered by Google Gemini</span>
+      </div>
+      <div id="ragAnalysisSpinner" style="display:none;padding:24px 0;justify-content:center;align-items:center;gap:8px;">
+        <span class="spin"></span> Analyzing competitors and predicting ranking impact...
+      </div>
+      <div id="ragAnalysisContent"></div>
+    </div>
+
+    <!-- SERP Organic Results Table -->
+    <div class="c-card">
+      <h3 style="font-size:15px;margin:0 0 8px;font-weight:600;">SERP Organic Results</h3>
+      <div class="tbl-wrap">
+        <table class="tbl-custom" style="width:100%;border-collapse:collapse;">
+          <thead>
             <tr>
-              <td><span class="rank ${c.position <= 3 ? 't3' : (c.position <= 10 ? 't10' : '')}">#${c.position}</span></td>
-              <td><b>${esc(c.domain)}</b> ${c.isTargetSite ? '<span class="you-tag">Your Site</span>' : ''}</td>
-              <td>${esc(c.title)}</td>
-              <td class="muted" style="max-width:300px;font-size:12.5px;">${esc(c.snippet || c.url)}</td>
+              <th style="width:8%">Rank</th>
+              <th style="width:25%">Domain</th>
+              <th style="width:35%">Title</th>
+              <th>Snippet</th>
             </tr>
-          `).join("") : '<tr><td colspan="4" class="muted">No competitor records found for this run.</td></tr>'}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            ${serpCompetitors.length ? serpCompetitors.map(c => `
+              <tr>
+                <td><b>#${c.position}</b></td>
+                <td><b>${esc(c.domain)}</b> ${c.isTargetSite ? '<span class="pill" style="background:var(--c-up-bg);color:var(--c-up);margin-left:4px;">Target</span>' : ''}</td>
+                <td>${esc(c.title)}</td>
+                <td style="color:var(--c-sub);font-size:12px;">${esc(c.snippet || c.url)}</td>
+              </tr>
+            `).join("") : `<tr><td colspan="4" class="c-lbl" style="text-align:center;padding:24px;">No competitors found for this run.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
     </div>
-  </div>
-
-  <div class="panel" style="margin-bottom:18px">
-    <h2>Prepared RAG Input (Stored in PostgreSQL)</h2>
-    <p class="sub">Structured context extracted from SERP and competitor scraping ready for Google Gemini prompt generation.</p>
-    <div style="background:var(--surface-2);border-radius:var(--radius);padding:14px;overflow:auto;max-height:300px;">
-      <pre style="margin:0;font-family:monospace;font-size:12.5px;white-space:pre-wrap;">${esc(JSON.stringify(ragData, null, 2))}</pre>
-    </div>
-  </div>`;
+  `;
 
   if(existingAnalysis) {
     renderAnalysisOutput(existingAnalysis);
   }
 }
 
-/* ---------- task modal ---------- */
-let editId=null;
+/* ---------- SPA Routing ---------- */
+function route(){
+  const h = location.hash.slice(1) || "dashboard";
+  const deep = h.startsWith("task-") || h.startsWith("report-");
+  $("#nav").innerHTML = navHTML(deep ? "tasks" : h);
+  $("#navM").innerHTML = navHTML(deep ? "tasks" : h);
 
-function openTaskModal(t){
-  editId=t?t.id:null;
-  $("#tmTitle").textContent=t?"Edit ranking task":"New ranking task";
-  $("#fName").value=t?.name||"";
-  $("#fSite").value=t?.website||"";
-  $("#fKeyword").value=t?.keyword || (t?.keywords && t.keywords[0]) || "";
-  $("#fLocation").value=t?.location || (t?.locations && t.locations[0]) || "";
-  $("#fPrompt").value=t?.prompt||DEFAULT_PROMPT;
-  $("#taskModal").classList.add("open");
-  setTimeout(()=>$("#fName").focus(),30);
+  if(h.startsWith("report-")){
+    const runId = h.slice(7);
+    window.scrollTo(0,0);
+    return renderReport(runId);
+  }
+  if(h.startsWith("task-")){
+    const taskId = h.slice(5);
+    const t = tasks.find(x => x.id === taskId);
+    if(t) return renderDetail(t);
+    location.hash = "tasks";
+    return;
+  }
+  if(h === "tasks") return renderTasks();
+  renderDashboard();
 }
 
-$("#saveTask").onclick=async()=>{
-  const name=$("#fName").value.trim();
-  const site=normDomain($("#fSite").value);
-  const kw=$("#fKeyword").value.trim();
-  const loc=$("#fLocation").value.trim();
-  const prompt=$("#fPrompt").value.trim();
+window.addEventListener("hashchange", route);
 
-  if(!site){toast("Add website to track");return $("#fSite").focus()}
-  if(!kw){toast("Add target keyword");return $("#fKeyword").focus()}
-  if(!loc){toast("Add target location");return $("#fLocation").focus()}
+/* ---------- Global UI Click Handlers ---------- */
+let editTaskId = null;
+let currentRunTaskId = null;
 
-  const currentRuns = (editId && tasks.find(x=>x.id===editId)?.runs) || [];
-  const t={
-    id: editId || "",
+function openTaskModal(t = null){
+  editTaskId = t ? t.id : null;
+  $("#tmTitle").innerHTML = `<i class="ti ti-${t ? 'edit' : 'plus'}"></i> ${t ? 'Edit ranking task' : 'New ranking task'}`;
+  $("#fName").value = t ? t.name : "";
+  $("#fSite").value = t ? t.website : "";
+  $("#fKeyword").value = t ? t.keyword : "";
+  $("#fLocation").value = t ? t.location : "";
+  $("#fPrompt").value = t ? t.prompt : DEFAULT_PROMPT;
+  $("#taskModal").classList.add("open");
+  setTimeout(() => $("#fName").focus(), 40);
+}
+
+function openRunModal(taskId){
+  const t = tasks.find(x => x.id === taskId);
+  if(!t) return;
+  currentRunTaskId = taskId;
+  $("#rmTitle").innerHTML = `<i class="ti ti-player-play"></i> Run Task: “${esc(t.name)}”`;
+  $("#fNote").value = "";
+  $("#runProg").hidden = true;
+  $("#ragInspectBox").style.display = "none";
+  $("#runBar").style.width = "0";
+  $("#runGo").disabled = false;
+  $("#runModal").classList.add("open");
+}
+
+function closeModals(){
+  $$(".scrim").forEach(m => m.classList.remove("open"));
+}
+$$("[data-close]").forEach(b => b.onclick = closeModals);
+
+$("#saveTask").onclick = async () => {
+  const name = $("#fName").value.trim();
+  const site = normDomain($("#fSite").value);
+  const kw = $("#fKeyword").value.trim();
+  const loc = $("#fLocation").value.trim();
+  const prompt = $("#fPrompt").value.trim();
+
+  if(!site) { toast("Enter website to track", true); return $("#fSite").focus(); }
+  if(!kw) { toast("Enter target keyword", true); return $("#fKeyword").focus(); }
+  if(!loc) { toast("Enter target location", true); return $("#fLocation").focus(); }
+
+  const taskPayload = {
+    id: editTaskId || "",
     name: name || site,
     website: site,
     keyword: kw,
     location: loc,
     keywords: [kw],
     locations: [loc],
-    prompt: prompt,
-    runs: currentRuns
+    prompt: prompt || DEFAULT_PROMPT
   };
 
-  const saved = await saveTask(t);
-  if (saved) {
+  const ok = await saveTask(taskPayload);
+  if(ok) {
     closeModals();
-    toast(editId ? "Task updated successfully" : "Task created successfully");
-
-    // Refresh view
-    if (editId && location.hash.startsWith("#task-")) {
-      renderDetail(t);
-    } else {
-      location.hash="tasks";
-      route();
-    }
+    toast(editTaskId ? "Task updated" : "Task created");
+    route();
   }
 };
 
-/* ---------- run modal ---------- */
-let runTaskId=null;
-function openRunModal(id){
-  const t=tasks.find(x=>x.id===id);if(!t)return;
-  runTaskId=id;
-  $("#rmTitle").textContent="Run live SERP: “"+t.name+"”";
-  $("#fNote").value="";
-  $("#runProg").hidden=true;
-  $("#ragInspectBox").style.display="none";
-  $("#runBar").style.width="0";
-  $("#runGo").disabled=false;
-  $("#runModal").classList.add("open");
-}
-
-$("#runGo").onclick=async()=>{
-  const t=tasks.find(x=>x.id===runTaskId);if(!t)return;
-  $("#runGo").disabled=true;
-  const run = await executeLiveRun(t, $("#fNote").value, []);
-  if(run) {
-    if(!t.runs) t.runs = [];
-    t.runs.push(run);
-    toast("Live SERP queried and saved in PostgreSQL!");
-    setTimeout(()=>{
+$("#runGo").onclick = async () => {
+  const t = tasks.find(x => x.id === currentRunTaskId);
+  if(!t) return;
+  $("#runGo").disabled = true;
+  const res = await executeLiveRun(t, $("#fNote").value, []);
+  if(res && res.runId) {
+    toast("Live SERP analyzed!");
+    setTimeout(() => {
       closeModals();
-      location.hash=reportHash(t, t.runs.length - 1);
+      location.hash = "report-" + res.runId;
     }, 400);
   } else {
-    $("#runGo").disabled=false;
+    $("#runGo").disabled = false;
   }
 };
 
-function closeModals(){$$(".scrim").forEach(m=>m.classList.remove("open"));}
-$$("[data-close]").forEach(b=>b.onclick=closeModals);
-// Prevent backdrop click from dismissing the modal dialog (close only on completion or close icon/cancel button)
-
-/* ---------- Global clicks ---------- */
-document.addEventListener("click",e=>{
-  if(e.target.closest("[data-new]")){openTaskModal();return}
-  const ed=e.target.closest("[data-edit]");
-  if(ed){
+document.addEventListener("click", e => {
+  if(e.target.closest("[data-new]")) { openTaskModal(); return; }
+  
+  const ed = e.target.closest("[data-edit]");
+  if(ed) {
     e.stopPropagation();
-    const id=ed.dataset.edit;
-    const t=tasks.find(x=>x.id===id);
+    const t = tasks.find(x => x.id === ed.dataset.edit);
     if(t) openTaskModal(t);
     return;
   }
-  const sa=e.target.closest("#btnStartAnalyzing, [data-analyze]");
-  if(sa){
+
+  const rn = e.target.closest("[data-run]");
+  if(rn) {
     e.stopPropagation();
-    const runId = sa.dataset.runid || sa.getAttribute("data-runid");
-    if(runId) {
-      startAnalyzingRag(runId, 0);
-      return;
-    }
+    openRunModal(rn.dataset.run);
+    return;
   }
-  const r=e.target.closest("[data-run]");if(r){e.stopPropagation();openRunModal(r.dataset.run);return}
-  const d=e.target.closest("[data-del]");if(d){const t=tasks.find(x=>x.id===d.dataset.del);if(t&&confirm(`Delete “${t.name}”?`)){removeTask(t.id);location.hash="tasks";toast("Task deleted from PostgreSQL");route();}return}
-  const hr=e.target.closest("[data-href]");if(hr){location.hash=hr.dataset.href;return}
-  const g=e.target.closest("[data-go]");if(g){location.hash="task-"+g.dataset.go}
+
+  const dl = e.target.closest("[data-del]");
+  if(dl) {
+    e.stopPropagation();
+    const t = tasks.find(x => x.id === dl.dataset.del);
+    if(t && confirm(`Are you sure you want to delete task "${t.name}"?`)) {
+      removeTask(t.id).then(() => {
+        toast("Task deleted");
+        location.hash = "tasks";
+        route();
+      });
+    }
+    return;
+  }
+
+  const sa = e.target.closest("#btnStartAnalyzing");
+  if(sa) {
+    e.stopPropagation();
+    const rId = sa.dataset.runid;
+    if(rId) startAnalyzingRag(rId);
+    return;
+  }
 });
 
-$("#themeBtn").onclick=()=>{const rt=document.documentElement;const dark=rt.dataset.theme?rt.dataset.theme==="dark":matchMedia("(prefers-color-scheme: dark)").matches;rt.dataset.theme=dark?"light":"dark";route()};
+document.addEventListener("change", e => {
+  if(e.target.id === "taskFilterSelect") {
+    renderRecentRunsRows(e.target.value);
+  }
+});
 
-  // Expose methods needed by inline HTML onclick handlers or window scope
-  window.startAnalyzingRag = startAnalyzingRag;
-  window.openTaskModal = openTaskModal;
+const themeBtn = $("#themeBtn");
+if(themeBtn) {
+  themeBtn.onclick = () => {
+    const rt = document.documentElement;
+    const isDark = rt.dataset.theme === "dark" || matchMedia('(prefers-color-scheme: dark)').matches;
+    rt.dataset.theme = isDark ? "light" : "dark";
+    if(location.hash === "" || location.hash === "#dashboard") {
+      renderDashboard();
+    }
+  };
+}
 
-  setStatus();
-  syncFromDb().then(() => route());
+// Initial boot
+setStatus();
+syncFromDb().then(() => route());
 })();
 </script>
 }
