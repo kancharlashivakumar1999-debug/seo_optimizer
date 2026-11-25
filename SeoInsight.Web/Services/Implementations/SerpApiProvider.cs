@@ -1,8 +1,11 @@
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using SeoInsight.Web.Constants;
+using SeoInsight.Web.Infrastructure.Data;
+using SeoInsight.Web.Models.Database;
 using SeoInsight.Web.Models.Domain;
 using SeoInsight.Web.Models.Options;
+using SeoInsight.Web.Repositories.Interfaces;
 using SeoInsight.Web.Services.Interfaces;
 
 namespace SeoInsight.Web.Services.Implementations;
@@ -15,6 +18,7 @@ public sealed class SerpApiProvider : ISerpProvider
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IOptionsSnapshot<SerpOptions> _options;
     private readonly IOptionsSnapshot<TrackingOptions> _trackingOptions;
+    private readonly ISeoAuditRepository _auditRepository;
     private readonly ILogger<SerpApiProvider> _logger;
 
     public string ProviderName => ProviderConstants.SerpApi;
@@ -23,20 +27,22 @@ public sealed class SerpApiProvider : ISerpProvider
         IHttpClientFactory httpClientFactory,
         IOptionsSnapshot<SerpOptions> options,
         IOptionsSnapshot<TrackingOptions> trackingOptions,
+        ISeoAuditRepository auditRepository,
         ILogger<SerpApiProvider> logger)
     {
         _httpClientFactory = httpClientFactory;
         _options = options;
         _trackingOptions = trackingOptions;
+        _auditRepository = auditRepository;
         _logger = logger;
     }
 
-    public async Task<SerpResult> FetchSerpAsync(string keyword, string location, CancellationToken ct = default)
+    public async Task<SerpResult> FetchSerpAsync(string keyword, string location, Guid runId, CancellationToken ct = default)
     {
-        return await FetchSerpAsync(keyword, location, 1, ct);
+        return await FetchSerpAsync(keyword, location, 1, runId, ct);
     }
 
-    public async Task<SerpResult> FetchSerpAsync(string keyword, string location, int page, CancellationToken ct = default)
+    public async Task<SerpResult> FetchSerpAsync(string keyword, string location, int page, Guid runId, CancellationToken ct = default)
     {
         var opt = _options.Value;
         var result = new SerpResult
@@ -55,8 +61,7 @@ public sealed class SerpApiProvider : ISerpProvider
 
         var client = _httpClientFactory.CreateClient("SerpApiClient");
 
-        int depth = opt.ResultsDepth > 0 ? opt.ResultsDepth : 10;
-        int start = Math.Max(0, (page - 1) * depth);
+        int start = Math.Max(0, (page - 1));
 
         // Construct SerpApi Google search URL with deterministic parameters for stable, repeatable rankings:
         // - Removed 'no_cache=true' to allow SerpApi's consistency layer to serve identical rankings for the same query.
@@ -84,6 +89,24 @@ public sealed class SerpApiProvider : ISerpProvider
             $"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(kv.Value).Replace("%20", "+")}"));
 
         var requestUrl = $"https://serpapi.com/search.json?{queryString}";
+        result.RequestedUrl = requestUrl;
+
+        // Persist exact requested URL directly from FetchSerpAsync into serp_request_debug_logs
+        try
+        {
+            await _auditRepository.SaveSerpDebugLogAsync(new SerpRequestDebugLogEntity
+            {
+                Id = DbConstants.NewUuidV7(),
+                RunId = runId, // Populated / associated with run
+                Url = requestUrl,
+                Page = page,
+                CreatedAt = DateTime.UtcNow
+            }, ct);
+        }
+        catch (Exception dbgEx)
+        {
+            _logger.LogWarning(dbgEx, "Could not write debug URL log in FetchSerpAsync");
+        }
 
         _logger.LogInformation("Calling live SerpApi for query: '{Keyword}' in '{Location}'", keyword, location);
 
@@ -140,7 +163,7 @@ public sealed class SerpApiProvider : ISerpProvider
                     : fallbackPos++;
 
                 // Ensure position reflects page offset if SerpApi returned 1-based index per page
-                if (position <= depth && page > 1)
+                if (position <= 0 && page > 1)
                 {
                     position += start;
                 }

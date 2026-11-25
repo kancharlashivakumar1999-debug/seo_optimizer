@@ -205,7 +205,7 @@ public class DashboardController : Controller
             SerpResult pageSerp;
             try
             {
-                pageSerp = await _serpService.GetSerpAsync(kw, loc, page, ct);
+                pageSerp = await _serpService.GetSerpAsync(kw, loc, page, runId, ct);
             }
             catch (Polly.Timeout.TimeoutRejectedException ex)
             {
@@ -228,6 +228,7 @@ public class DashboardController : Controller
                 serp = pageSerp;
             }
 
+             
             if (pageSerp.PeopleAlsoAsk.Count > 0)
             {
                 foreach (var paa in pageSerp.PeopleAlsoAsk)

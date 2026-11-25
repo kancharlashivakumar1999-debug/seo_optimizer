@@ -32,6 +32,7 @@ public sealed class SerpResult
     public string Keyword { get; set; } = string.Empty;
     public string Location { get; set; } = string.Empty;
     public string SearchEngine { get; set; } = "google";
+    public string? RequestedUrl { get; set; }
     public DateTime FetchedAtUtc { get; set; } = DateTime.UtcNow;
     public long? SearchVolume { get; set; }
     public double? KeywordDifficulty { get; set; }

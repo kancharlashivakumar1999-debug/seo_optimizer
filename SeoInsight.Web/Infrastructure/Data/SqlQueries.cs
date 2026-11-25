@@ -281,4 +281,14 @@ public static class SqlQueries
             g.created_at AS CreatedAt
         FROM gap_analysis_results g
         WHERE g.run_id = @RunId AND g.is_active = TRUE;";
+    // --- Debug Logs ---
+    public const string InsertSerpDebugLog = @"
+        INSERT INTO serp_request_debug_logs (id, run_id, url, page, created_at)
+        VALUES (@Id, @RunId, @Url, @Page, @CreatedAt);";
+
+    public const string GetSerpDebugLogsByRunId = @"
+        SELECT id AS Id, run_id AS RunId, url AS Url, created_at AS CreatedAt
+        FROM serp_request_debug_logs
+        WHERE run_id = @RunId
+        ORDER BY created_at ASC;";
 }

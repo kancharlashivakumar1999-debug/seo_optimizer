@@ -234,6 +234,25 @@ public sealed class PostgresSeoAuditRepository : ISeoAuditRepository, ITaskRepos
         }
     }
 
+    // --- Debug Logs ---
+    public async Task SaveSerpDebugLogAsync(SerpRequestDebugLogEntity log, CancellationToken ct = default)
+    {
+        if (log.Id == Guid.Empty)
+        {
+            log.Id = DbConstants.NewUuidV7();
+        }
+
+        using var conn = _connectionFactory.CreateConnection();
+        await conn.ExecuteAsync(new CommandDefinition(SqlQueries.InsertSerpDebugLog, log, cancellationToken: ct));
+    }
+
+    public async Task<IEnumerable<SerpRequestDebugLogEntity>> GetSerpDebugLogsByRunIdAsync(Guid runId, CancellationToken ct = default)
+    {
+        using var conn = _connectionFactory.CreateConnection();
+        return await conn.QueryAsync<SerpRequestDebugLogEntity>(
+            new CommandDefinition(SqlQueries.GetSerpDebugLogsByRunId, new { RunId = runId }, cancellationToken: ct));
+    }
+
     public async Task<RunReport?> GetReportByIdAsync(string id, CancellationToken ct = default)
     {
         var all = await GetAllReportsAsync(ct);

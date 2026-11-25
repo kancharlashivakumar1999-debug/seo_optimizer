@@ -45,6 +45,15 @@ public sealed class TaskRunEntity
     public bool IsActive { get; set; } = true;
 }
 
+public sealed class SerpRequestDebugLogEntity
+{
+    public Guid Id { get; set; }
+    public Guid RunId { get; set; }
+    public string Url { get; set; } = string.Empty;
+    public int? Page { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
 public sealed class SerpCompetitorEntity
 {
     public Guid CompetitorId { get; set; }

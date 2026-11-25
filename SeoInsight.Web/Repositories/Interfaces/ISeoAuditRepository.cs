@@ -36,6 +36,10 @@ public interface ISeoAuditRepository
     Task SaveGapAnalysisResultAsync(GapAnalysisResultEntity analysisResult, CancellationToken ct = default);
     Task<GapAnalysisProjection?> GetGapAnalysisByRunIdAsync(Guid runId, CancellationToken ct = default);
 
+    // Debug Logs Operations
+    Task SaveSerpDebugLogAsync(SerpRequestDebugLogEntity log, CancellationToken ct = default);
+    Task<IEnumerable<SerpRequestDebugLogEntity>> GetSerpDebugLogsByRunIdAsync(Guid runId, CancellationToken ct = default);
+
     // Legacy RunReport Compatibility
     Task<List<RunReport>> GetAllReportsAsync(CancellationToken ct = default);
     Task<RunReport?> GetReportByIdAsync(string id, CancellationToken ct = default);

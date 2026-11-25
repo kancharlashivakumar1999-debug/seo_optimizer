@@ -21,12 +21,12 @@ public sealed class SerpService : ISerpService
         _logger = logger;
     }
 
-    public async Task<SerpResult> GetSerpAsync(string keyword, string location, CancellationToken ct = default)
+    public async Task<SerpResult> GetSerpAsync(string keyword, string location, Guid runId, CancellationToken ct = default)
     {
-        return await GetSerpAsync(keyword, location, 1, ct);
+        return await GetSerpAsync(keyword, location, 1, runId, ct);
     }
 
-    public async Task<SerpResult> GetSerpAsync(string keyword, string location, int page, CancellationToken ct = default)
+    public async Task<SerpResult> GetSerpAsync(string keyword, string location, int page, Guid runId, CancellationToken ct = default)
     {
         var providerName = _optionsMonitor.CurrentValue.Provider;
         var provider = _providers.FirstOrDefault(p => string.Equals(p.ProviderName, providerName, StringComparison.OrdinalIgnoreCase))
@@ -35,6 +35,6 @@ public sealed class SerpService : ISerpService
         _logger.LogInformation("Querying SERP via provider '{ProviderName}' for keyword '{Keyword}', location '{Location}', page {Page}",
             providerName, keyword, location, page);
 
-        return await provider.FetchSerpAsync(keyword, location, page, ct);
+        return await provider.FetchSerpAsync(keyword, location, page, runId, ct);
     }
 }

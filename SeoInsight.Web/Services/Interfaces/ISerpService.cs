@@ -7,6 +7,6 @@ namespace SeoInsight.Web.Services.Interfaces;
 /// </summary>
 public interface ISerpService
 {
-    Task<SerpResult> GetSerpAsync(string keyword, string location, CancellationToken ct = default);
-    Task<SerpResult> GetSerpAsync(string keyword, string location, int page, CancellationToken ct = default);
+    Task<SerpResult> GetSerpAsync(string keyword, string location, Guid runId, CancellationToken ct = default);
+    Task<SerpResult> GetSerpAsync(string keyword, string location, int page, Guid runId, CancellationToken ct = default);
 }

@@ -30,12 +30,12 @@ public sealed class DataForSeoProvider : ISerpProvider
         _logger = logger;
     }
 
-    public async Task<SerpResult> FetchSerpAsync(string keyword, string location, CancellationToken ct = default)
+    public async Task<SerpResult> FetchSerpAsync(string keyword, string location, Guid runId, CancellationToken ct = default)
     {
-        return await FetchSerpAsync(keyword, location, 1, ct);
+        return await FetchSerpAsync(keyword, location, 1, runId, ct);
     }
 
-    public async Task<SerpResult> FetchSerpAsync(string keyword, string location, int page, CancellationToken ct = default)
+    public async Task<SerpResult> FetchSerpAsync(string keyword, string location, int page, Guid runId, CancellationToken ct = default)
     {
         var opt = _options.Value;
         var result = new SerpResult
