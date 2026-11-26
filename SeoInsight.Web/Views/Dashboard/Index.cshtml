@@ -362,10 +362,10 @@ function setStatus(){
 }
 
 function fmtRank(r){
-  if(r == null) return "–";
+          if(r == null) return "#50+";
   const num = typeof r === "number" ? r : parseFloat(r);
-  if(isNaN(num)) return "–";
-  if(num >= 101) return "100+";
+  if(isNaN(num)) return "#50+";
+  if(num >= 101) return "#100+";
   return "#" + (Math.round(num * 10) / 10).toString();
 }
 
@@ -538,7 +538,10 @@ function renderAnalysisOutput(data) {
   const actionPlan = prop(mods, "actionPlan") || [];
 
   const curPos = prop(target, "currentPosition") ?? prop(rankPred, "baselinePosition") ?? "–";
-  const curPosDisplay = String(curPos).includes("+") || String(curPos).includes("50") ? curPos : `#${curPos}`;
+  const curPosStr = String(curPos).trim();
+  const curPosDisplay = (curPosStr.includes("+") || curPosStr.includes("50") || curPosStr.toLowerCase().includes("above") || curPos === 51)
+    ? (curPos === 51 || curPosStr.includes("50") ? "50+" : curPosStr)
+    : (curPosStr === "–" ? "–" : `#${curPosStr}`);
   const projPos = prop(rankPred, "projectedPosition") ?? "–";
   const projPosDisplay = projPos !== "–" && !String(projPos).startsWith("#") ? `#${projPos}` : projPos;
   const intentFit = prop(target, "currentIntentFit") || "Moderate";
@@ -1083,7 +1086,7 @@ async function renderTasks(page = 1){
                 <td style="color:var(--c-sub);">${esc(t.targetWebsite)}</td>
                 <td><span class="chip" style="font-size:11px;">${esc(t.targetKeyword)}</span></td>
                 <td>${esc(t.targetLocation)}</td>
-                <td><b>${t.latestAverageRank ? '#' + (Math.round(t.latestAverageRank*10)/10) : '–'}</b></td>
+                <td><b>${t.latestAverageRank ? '#' + (Math.round(t.latestAverageRank*10)/10) : '#50+'}</b></td>
                 <td>${t.totalRuns}</td>
                 <td style="text-align:right" onclick="event.stopPropagation()">
                   <button class="btn sm" onclick="location.hash='task-${t.taskId}'">Details</button>

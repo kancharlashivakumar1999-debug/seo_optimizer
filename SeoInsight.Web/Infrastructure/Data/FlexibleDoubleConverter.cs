@@ -29,17 +29,21 @@ public sealed class FlexibleDoubleConverter : JsonConverter<double>
                 return parsed;
             }
 
-            // Handle patterns like "100+", ">100", "Top 100", "#14"
+            // If it's something like "Above 50", ">50", "50+", "100+", "unranked"
+            if (stringValue.Contains("Above", StringComparison.OrdinalIgnoreCase) ||
+                stringValue.Contains(">") ||
+                stringValue.Contains("100") ||
+                stringValue.Contains("+") ||
+                stringValue.Contains("unranked", StringComparison.OrdinalIgnoreCase))
+            {
+                return 51.0;
+            }
+
+            // Handle patterns like "#14"
             var digitsOnly = System.Text.RegularExpressions.Regex.Match(stringValue, @"\d+(\.\d+)?");
             if (digitsOnly.Success && double.TryParse(digitsOnly.Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var num))
             {
                 return num;
-            }
-
-            // If it's something like "100+" or "unranked"
-            if (stringValue.Contains("100") || stringValue.Contains("+"))
-            {
-                return 101.0;
             }
 
             return 0.0;

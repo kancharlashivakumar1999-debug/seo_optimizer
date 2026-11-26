@@ -426,9 +426,11 @@ Respond ONLY with a JSON object with this exact structure:
 //        return sb.ToString();
 //    }
 
-private static SeoAnalysisOutputDto GenerateGroundedFallback(RagInputDto ragInput)
+    private static SeoAnalysisOutputDto GenerateGroundedFallback(RagInputDto ragInput)
     {
-        double currentPos = ragInput.OwnRankPosition.HasValue ? ragInput.OwnRankPosition.Value : 14.0;
+        string currentPos = (ragInput.OwnRankPosition.HasValue && ragInput.OwnRankPosition.Value > 0 && ragInput.OwnRankPosition.Value <= 50)
+            ? ragInput.OwnRankPosition.Value.ToString("F1")
+            : "50+";
         var top5 = ragInput.TopCompetitors.Where(c => !c.IsTargetSite).Take(5).ToList();
         var primaryComp = top5.FirstOrDefault();
 
@@ -449,7 +451,7 @@ private static SeoAnalysisOutputDto GenerateGroundedFallback(RagInputDto ragInpu
                 TargetUrl = $"https://{ragInput.TargetWebsite}",
                 TargetKeyword = ragInput.Keyword,
                 CurrentPosition = currentPos,
-                CurrentIntentFit = currentPos <= 5 ? "High" : (currentPos <= 10 ? "Moderate" : "Poor"),
+                CurrentIntentFit = (double.TryParse(currentPos, out var parsedPos) && parsedPos <= 5) ? "High" : ((double.TryParse(currentPos, out var p2) && p2 <= 10) ? "Moderate" : "Poor"),
                 OverallDrawbackSummary = $"Our page on '{ragInput.TargetWebsite}' currently lags behind leaders like {primaryComp?.Domain ?? "the top results"} due to thin topical depth, missing structured FAQ schema, and lower density of location-specific proof points."
             },
             CompetitorDeepDive = deepDive,
@@ -533,7 +535,7 @@ private static SeoAnalysisOutputDto GenerateGroundedFallback(RagInputDto ragInpu
             RankPrediction = new RankPredictionDto
             {
                 BaselinePosition = currentPos,
-                ProjectedPosition = currentPos > 10 ? 4.5 : Math.Max(1.0, currentPos - 3.0),
+                ProjectedPosition = (double.TryParse(currentPos, out var dPos) && dPos <= 10) ? Math.Max(1.0, dPos - 3.0) : 4.5,
                 ProjectedRange = "Positions 3 - 6",
                 TimelineWeeks = "4 to 6 weeks",
                 ConfidenceScore = 0.88,

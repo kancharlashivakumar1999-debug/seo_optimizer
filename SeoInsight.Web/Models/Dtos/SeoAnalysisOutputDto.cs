@@ -17,8 +17,8 @@ public sealed class TargetAnalysisDto
     public string TargetUrl { get; set; } = string.Empty;
     public string TargetKeyword { get; set; } = string.Empty;
 
-    [JsonConverter(typeof(FlexibleDoubleConverter))]
-    public double CurrentPosition { get; set; }
+    [JsonConverter(typeof(FlexiblePositionStringConverter))]
+    public string CurrentPosition { get; set; } = "50+";
     public string CurrentIntentFit { get; set; } = "Moderate"; // Poor | Moderate | High
     public string OverallDrawbackSummary { get; set; } = string.Empty;
 }
@@ -73,8 +73,8 @@ public sealed class ActionPlanItemDto
 
 public sealed class RankPredictionDto
 {
-    [JsonConverter(typeof(FlexibleDoubleConverter))]
-    public double BaselinePosition { get; set; }
+    [JsonConverter(typeof(FlexiblePositionStringConverter))]
+    public string BaselinePosition { get; set; } = "50+";
 
     [JsonConverter(typeof(FlexibleDoubleConverter))]
     public double ProjectedPosition { get; set; }
