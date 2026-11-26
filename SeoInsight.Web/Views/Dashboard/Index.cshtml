@@ -1193,7 +1193,7 @@ async function renderDetail(t, page = 1){
           <tbody>
             ${runs.length ? runs.map((r, idx) => `
               <tr style="cursor:pointer;" onclick="location.hash='report-${r.runId}'">
-                <td><b>Run #${r.runNumber > 0 ? r.runNumber : ((page - 1) * detailRunsPageSize + idx + 1)}</b></td>
+                        <td><b>Run #${r.idx >= 0 ? idx : ((page - 1) * detailRunsPageSize + idx + 1)}</b></td>
                 <td style="color:var(--c-sub);">${fmtDT(r.startedAt || r.createdAt)}</td>
                 <td><span class="pill ${r.visibilityScore >= 50 ? 'up' : 'flat'}">${r.visibilityScore}%</span></td>
                 <td><b>${fmtRank(r.averageRank)}</b></td>
