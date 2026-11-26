@@ -1248,6 +1248,7 @@ async function renderReport(runId){
   let requestedSerpUrl = null;
   let debugLogs = [];
   let currentTask = null;
+  let runAvgRank = null;
 
   try {
     const res = await fetch("/Dashboard/GetRunDetail?id=" + encodeURIComponent(runId));
@@ -1256,6 +1257,7 @@ async function renderReport(runId){
       serpCompetitors = detail.competitors || [];
       requestedSerpUrl = detail.requestedSerpUrl || null;
       debugLogs = detail.debugUrls || [];
+      runAvgRank = detail.avgRank != null ? detail.avgRank : (detail.run && detail.run.averageRank != null ? detail.run.averageRank : null);
 
       if (detail.ragPayload) {
         currentTask = tasks.find(t => t.id === detail.ragPayload.taskId);
@@ -1336,7 +1338,21 @@ async function renderReport(runId){
 
     <!-- SERP Organic Results Table -->
     <div class="c-card">
-      <h3 style="font-size:15px;margin:0 0 8px;font-weight:600;">SERP Organic Results</h3>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+        <h3 style="font-size:15px;margin:0;font-weight:600;">SERP Organic Results</h3>
+        <div style="display:flex;align-items:center;gap:6px;font-size:13px;">
+          <span class="c-lbl" style="font-weight:600;">Current Position:</span>
+          ${(() => {
+            const posVal = runAvgRank != null ? runAvgRank : (currentRagInputs[runId] && currentRagInputs[runId][0] ? currentRagInputs[runId][0].ownRankPosition : null);
+            if (posVal != null && Number(posVal) > 0 && Number(posVal) <= 50) {
+              const num = Math.round(Number(posVal) * 10) / 10;
+              return `<span class="pill up" style="font-size:12px;padding:3px 10px;font-weight:700;">#${num}</span>`;
+            } else {
+              return `<span class="pill dn" style="font-size:12px;padding:3px 10px;font-weight:700;">50+</span>`;
+            }
+          })()}
+        </div>
+      </div>
       <div class="tbl-wrap">
         <table class="tbl-custom" style="width:100%;border-collapse:collapse;">
           <thead>

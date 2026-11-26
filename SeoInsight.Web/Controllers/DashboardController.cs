@@ -590,6 +590,7 @@ public class DashboardController : Controller
             success = true,
             runId = runId.ToString(),
             taskId = taskId.ToString(),
+            avgRank = avgRank,
             report,
             ragInputs = allRagInputs
         });
@@ -673,6 +674,7 @@ public class DashboardController : Controller
     [HttpGet]
     public async Task<IActionResult> GetRunDetail(Guid id, CancellationToken ct)
     {
+        var run = await _auditRepository.GetRunByIdAsync(id, ct);
         var competitors = await _auditRepository.GetCompetitorsByRunIdAsync(id, ct);
         var analysis = await _auditRepository.GetGapAnalysisByRunIdAsync(id, ct);
         var ragPayload = await _auditRepository.GetRagPayloadByRunIdAsync(id, ct);
@@ -681,6 +683,8 @@ public class DashboardController : Controller
         {
             success = true,
             runId = id,
+            run,
+            avgRank = run?.AverageRank,
             competitors,
             analysis,
             ragPayload

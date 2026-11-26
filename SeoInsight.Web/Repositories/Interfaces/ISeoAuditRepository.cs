@@ -19,6 +19,7 @@ public interface ISeoAuditRepository
 
     // Task Run Operations (Execution Mapping)
     Task<Guid> SaveTaskRunAsync(TaskRunEntity run, CancellationToken ct = default);
+    Task<TaskRunSummaryProjection?> GetRunByIdAsync(Guid runId, CancellationToken ct = default);
     Task<IEnumerable<TaskRunSummaryProjection>> GetRunsByTaskIdAsync(Guid taskId, CancellationToken ct = default);
     Task<PagedResult<TaskRunSummaryProjection>> GetRunsByTaskIdPagedAsync(Guid taskId, int page, int pageSize, CancellationToken ct = default);
     Task<IEnumerable<TaskRunSummaryProjection>> GetTaskChartRunsAsync(Guid taskId, CancellationToken ct = default);

@@ -194,6 +194,28 @@ public static class SqlQueries
         WHERE r.task_id = @TaskId AND r.is_active = TRUE
         ORDER BY r.started_at DESC;";
 
+    public const string GetRunByIdProjected = @"
+        SELECT 
+            r.run_id AS RunId,
+            r.task_id AS TaskId,
+            r.run_number AS RunNumber,
+            r.run_status AS RunStatus,
+            r.run_note AS RunNote,
+            r.implemented_changes::text AS ImplementedChangesJson,
+            r.visibility_score AS VisibilityScore,
+            r.average_rank AS AverageRank,
+            r.total_keywords_checked AS TotalKeywordsChecked,
+            r.top10_hits AS Top10Hits,
+            r.summary AS Summary,
+            r.duration_seconds AS DurationSeconds,
+            r.started_at AS StartedAt,
+            r.finished_at AS FinishedAt,
+            r.created_at AS CreatedAt,
+            CASE WHEN g.result_id IS NOT NULL THEN TRUE ELSE FALSE END AS HasGapAnalysis
+        FROM task_runs r
+        LEFT JOIN gap_analysis_results g ON g.run_id = r.run_id
+        WHERE r.run_id = @RunId AND r.is_active = TRUE;";
+
     public const string GetTaskChartRuns = @"
         SELECT 
             run_id AS RunId,

@@ -129,6 +129,13 @@ public sealed class PostgresSeoAuditRepository : ISeoAuditRepository, ITaskRepos
         }
     }
 
+    public async Task<TaskRunSummaryProjection?> GetRunByIdAsync(Guid runId, CancellationToken ct = default)
+    {
+        using var conn = _connectionFactory.CreateConnection();
+        return await conn.QueryFirstOrDefaultAsync<TaskRunSummaryProjection>(
+            new CommandDefinition(SqlQueries.GetRunByIdProjected, new { RunId = runId }, cancellationToken: ct));
+    }
+
     public async Task<IEnumerable<TaskRunSummaryProjection>> GetRunsByTaskIdAsync(Guid taskId, CancellationToken ct = default)
     {
         using var conn = _connectionFactory.CreateConnection();
