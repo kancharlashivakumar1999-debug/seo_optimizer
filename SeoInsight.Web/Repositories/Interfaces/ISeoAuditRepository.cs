@@ -11,6 +11,7 @@ public interface ISeoAuditRepository
 {
     // Task Operations (Including Edit & Soft Delete)
     Task<IEnumerable<TaskSummaryProjection>> GetAllTasksAsync(CancellationToken ct = default);
+    Task<PagedResult<TaskSummaryProjection>> GetTasksPagedAsync(int page, int pageSize, CancellationToken ct = default);
     Task<TaskSummaryProjection?> GetTaskByIdAsync(Guid taskId, CancellationToken ct = default);
     Task<Guid> SaveTaskAsync(AuditTaskEntity task, CancellationToken ct = default);
     Task<bool> DeleteTaskAsync(Guid taskId, CancellationToken ct = default);
@@ -19,6 +20,8 @@ public interface ISeoAuditRepository
     // Task Run Operations (Execution Mapping)
     Task<Guid> SaveTaskRunAsync(TaskRunEntity run, CancellationToken ct = default);
     Task<IEnumerable<TaskRunSummaryProjection>> GetRunsByTaskIdAsync(Guid taskId, CancellationToken ct = default);
+    Task<PagedResult<TaskRunSummaryProjection>> GetRunsByTaskIdPagedAsync(Guid taskId, int page, int pageSize, CancellationToken ct = default);
+    Task<IEnumerable<TaskRunSummaryProjection>> GetTaskChartRunsAsync(Guid taskId, CancellationToken ct = default);
 
     // SERP Competitor Operations (Linked by run_id)
     Task SaveCompetitorsAsync(Guid runId, Guid taskId, IEnumerable<SerpCompetitorEntity> competitors, CancellationToken ct = default);

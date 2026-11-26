@@ -151,18 +151,59 @@ public class DashboardController : Controller
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetTaskDetail(Guid id, CancellationToken ct)
+    public async Task<IActionResult> GetTasksPaged([FromQuery] int page = 1, [FromQuery] int pageSize = 10, CancellationToken ct = default)
+    {
+        var pagedTasks = await _auditRepository.GetTasksPagedAsync(page, pageSize, ct);
+        return Ok(new
+        {
+            success = true,
+            paged = pagedTasks
+        });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetTaskDetail(Guid id, [FromQuery] int page = 1, [FromQuery] int pageSize = 10, CancellationToken ct = default)
     {
         var task = await _auditRepository.GetTaskByIdAsync(id, ct);
         if (task == null) return NotFound(new { message = "Task not found." });
 
-        var runs = await _auditRepository.GetRunsByTaskIdAsync(id, ct);
+        var pagedRuns = await _auditRepository.GetRunsByTaskIdPagedAsync(id, page, pageSize, ct);
 
         return Ok(new
         {
             success = true,
             task,
-            runs
+            pagedRuns,
+            runs = pagedRuns.Items
+        });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetTaskChartData(Guid id, CancellationToken ct)
+    {
+        var task = await _auditRepository.GetTaskByIdAsync(id, ct);
+        if (task == null) return NotFound(new { message = "Task not found." });
+
+        var chartRuns = (await _auditRepository.GetTaskChartRunsAsync(id, ct)).ToList();
+
+        // Ensure chronological numbering: if DB has identical RunNumbers or fallback, guarantee distinct sequential run labels
+        var labels = chartRuns.Select((r, i) => $"Run #{i + 1}").ToList();
+        var dataPoints = chartRuns.Select(r => r.AverageRank.HasValue ? Math.Round(r.AverageRank.Value, 1) : (decimal?)null).ToList();
+        var dates = chartRuns.Select(r => r.StartedAt).ToList();
+
+        return Ok(new
+        {
+            success = true,
+            taskId = task.TaskId,
+            taskName = task.TaskName,
+            website = task.TargetWebsite,
+            keyword = task.TargetKeyword,
+            location = task.TargetLocation,
+            totalRuns = chartRuns.Count,
+            labels,
+            ranks = dataPoints,
+            dates,
+            runs = chartRuns
         });
     }
 
@@ -518,12 +559,16 @@ public class DashboardController : Controller
         report.FinishedAtUtc = DateTime.UtcNow;
         report.Status = "Completed";
 
+        // Calculate next run number for this task
+        var existingRuns = await _auditRepository.GetRunsByTaskIdAsync(taskId, ct);
+        int nextRunNumber = existingRuns.Any() ? existingRuns.Max(r => r.RunNumber) + 1 : 1;
+
         // Persist execution run mapping to task_runs table
         await _auditRepository.SaveTaskRunAsync(new TaskRunEntity
         {
             RunId = runId,
             TaskId = taskId,
-            RunNumber = 1,
+            RunNumber = nextRunNumber,
             RunStatus = "Completed",
             RunNote = request.Note,
             ImplementedChangesJson = JsonSerializer.Serialize(request.Implemented),

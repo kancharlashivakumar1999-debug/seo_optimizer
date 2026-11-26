@@ -34,6 +34,26 @@ public sealed class PostgresSeoAuditRepository : ISeoAuditRepository, ITaskRepos
             new CommandDefinition(SqlQueries.GetAllTasksProjected, cancellationToken: ct));
     }
 
+    public async Task<PagedResult<TaskSummaryProjection>> GetTasksPagedAsync(int page, int pageSize, CancellationToken ct = default)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Max(1, Math.Min(100, pageSize));
+        int offset = (page - 1) * pageSize;
+
+        using var conn = _connectionFactory.CreateConnection();
+        using var multi = await conn.QueryMultipleAsync(new CommandDefinition(SqlQueries.GetTasksPaged, new { Offset = offset, Limit = pageSize }, cancellationToken: ct));
+        var items = (await multi.ReadAsync<TaskSummaryProjection>()).ToList();
+        var totalCount = await multi.ReadFirstAsync<int>();
+
+        return new PagedResult<TaskSummaryProjection>
+        {
+            Items = items,
+            Page = page,
+            PageSize = pageSize,
+            TotalCount = totalCount
+        };
+    }
+
     public async Task<TaskSummaryProjection?> GetTaskByIdAsync(Guid taskId, CancellationToken ct = default)
     {
         using var conn = _connectionFactory.CreateConnection();
@@ -114,6 +134,33 @@ public sealed class PostgresSeoAuditRepository : ISeoAuditRepository, ITaskRepos
         using var conn = _connectionFactory.CreateConnection();
         return await conn.QueryAsync<TaskRunSummaryProjection>(
             new CommandDefinition(SqlQueries.GetRunsByTaskIdProjected, new { TaskId = taskId }, cancellationToken: ct));
+    }
+
+    public async Task<PagedResult<TaskRunSummaryProjection>> GetRunsByTaskIdPagedAsync(Guid taskId, int page, int pageSize, CancellationToken ct = default)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Max(1, Math.Min(100, pageSize));
+        int offset = (page - 1) * pageSize;
+
+        using var conn = _connectionFactory.CreateConnection();
+        using var multi = await conn.QueryMultipleAsync(new CommandDefinition(SqlQueries.GetRunsByTaskIdPaged, new { TaskId = taskId, Offset = offset, Limit = pageSize }, cancellationToken: ct));
+        var items = (await multi.ReadAsync<TaskRunSummaryProjection>()).ToList();
+        var totalCount = await multi.ReadFirstAsync<int>();
+
+        return new PagedResult<TaskRunSummaryProjection>
+        {
+            Items = items,
+            Page = page,
+            PageSize = pageSize,
+            TotalCount = totalCount
+        };
+    }
+
+    public async Task<IEnumerable<TaskRunSummaryProjection>> GetTaskChartRunsAsync(Guid taskId, CancellationToken ct = default)
+    {
+        using var conn = _connectionFactory.CreateConnection();
+        return await conn.QueryAsync<TaskRunSummaryProjection>(
+            new CommandDefinition(SqlQueries.GetTaskChartRuns, new { TaskId = taskId }, cancellationToken: ct));
     }
 
     // --- SERP Competitors (Linked by run_id) ---

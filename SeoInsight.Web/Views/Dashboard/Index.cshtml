@@ -81,8 +81,7 @@
   white-space: nowrap;
 }
 .tbl-custom td {
-  white-space: normal;
-  word-break: normal;
+  white-space: nowrap;
 }
 .cell-ellipsis {
   white-space: nowrap;
@@ -764,16 +763,16 @@ function renderDashboard(){
         </a>
       </div>
       <div class="tbl-wrap" style="margin:0;padding:0;overflow-x:auto;">
-        <table class="tbl-custom" style="width:100%;border-collapse:collapse;table-layout:fixed;min-width:680px;">
+        <table class="tbl-custom" style="width:100%;border-collapse:collapse;table-layout:fixed;min-width:760px;">
           <thead>
             <tr>
-              <th style="width:28%">Task</th>
-              <th style="width:22%">Keyword</th>
+              <th style="width:26%">Task</th>
+              <th style="width:20%">Keyword</th>
               <th style="width:8%">Runs</th>
               <th style="width:10%">Avg rank</th>
               <th style="width:10%">Change</th>
               <th style="width:10%">Trend</th>
-              <th style="width:12%;text-align:right">Last run</th>
+              <th style="width:16%;text-align:right">Action</th>
             </tr>
           </thead>
           <tbody id="taskOverviewTbody"></tbody>
@@ -966,7 +965,11 @@ function renderTaskOverviewRows(){
         <td>
           ${sparklineSvg}
         </td>
-        <td style="text-align:right;color:var(--c-sub);white-space:nowrap;">${fmtDT(t.lastRunAt)}</td>
+        <td style="text-align:right" onclick="event.stopPropagation()">
+          <button class="btn sm primary" onclick="location.hash='taskchart-${t.id}'" title="View historical runs vs rank chart" style="padding:4px 9px;font-size:12px;">
+            <i class="ti ti-chart-line"></i> View Report
+          </button>
+        </td>
       </tr>
     `;
   }).join("");
@@ -1023,8 +1026,13 @@ function renderRecentRunsRows(filterTaskId = ""){
 }
 
 /* ---------- Tasks View ---------- */
-function renderTasks(){
+let tasksCurrentPage = 1;
+const tasksPageSize = 10;
+
+async function renderTasks(page = 1){
+  tasksCurrentPage = page;
   const v = $("#dynamicContainer");
+
   v.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px;flex-wrap:wrap">
       <div>
@@ -1034,7 +1042,24 @@ function renderTasks(){
       <button class="btn primary" data-new><i class="ti ti-plus"></i> New task</button>
     </div>
 
-    <div class="c-card">
+    <div class="c-card" id="tasksTableContainer">
+      <div style="text-align:center;padding:32px;">
+        <span class="spin"></span> Loading tasks page ${page}...
+      </div>
+    </div>
+  `;
+
+  try {
+    const res = await fetch(`/Dashboard/GetTasksPaged?page=${page}&pageSize=${tasksPageSize}`);
+    if (!res.ok) throw new Error("Failed to load tasks page.");
+    const data = await res.json();
+    const paged = data.paged || { items: [], page: 1, pageSize: 10, totalCount: 0, totalPages: 1 };
+    const items = paged.items || [];
+
+    const container = $("#tasksTableContainer");
+    if (!container) return;
+
+    container.innerHTML = `
       <div class="tbl-wrap">
         <table class="tbl-custom" style="width:100%;border-collapse:collapse;">
           <thead>
@@ -1049,71 +1074,108 @@ function renderTasks(){
             </tr>
           </thead>
           <tbody>
-            ${tasks.length ? tasks.map(t => `
-              <tr style="cursor:pointer;" onclick="location.hash='task-${t.id}'">
+            ${items.length ? items.map((t, idx) => `
+              <tr style="cursor:pointer;" onclick="location.hash='task-${t.taskId}'">
                 <td style="font-weight:600;">
-                  <span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${t.color};margin-right:6px"></span>
-                  ${esc(t.name)}
+                  <span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${THEME_COLORS[((page-1)*tasksPageSize + idx) % THEME_COLORS.length]};margin-right:6px"></span>
+                  ${esc(t.taskName || t.targetWebsite)}
                 </td>
-                <td style="color:var(--c-sub);">${esc(t.website)}</td>
-                <td><span class="chip" style="font-size:11px;">${esc(t.keyword)}</span></td>
-                <td>${esc(t.location)}</td>
-                <td><b>${t.latestRank ? '#' + t.latestRank : '–'}</b></td>
+                <td style="color:var(--c-sub);">${esc(t.targetWebsite)}</td>
+                <td><span class="chip" style="font-size:11px;">${esc(t.targetKeyword)}</span></td>
+                <td>${esc(t.targetLocation)}</td>
+                <td><b>${t.latestAverageRank ? '#' + (Math.round(t.latestAverageRank*10)/10) : '–'}</b></td>
                 <td>${t.totalRuns}</td>
                 <td style="text-align:right" onclick="event.stopPropagation()">
-                  <button class="btn sm" onclick="location.hash='task-${t.id}'">View</button>
+                  <button class="btn sm" onclick="location.hash='task-${t.taskId}'">Details</button>
                 </td>
               </tr>
             `).join("") : `<tr><td colspan="7" class="c-lbl" style="text-align:center;padding:24px;">No tasks configured yet. Click "New task" above.</td></tr>`}
           </tbody>
         </table>
       </div>
-    </div>
-  `;
+
+      <!-- Pagination Footer -->
+      ${paged.totalPages > 1 ? `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 8px 4px;border-top:1px solid var(--line);margin-top:8px;font-size:12.5px;">
+          <span class="c-lbl">
+            Showing ${(paged.page - 1) * paged.pageSize + 1}–${Math.min(paged.page * paged.pageSize, paged.totalCount)} of ${paged.totalCount} tasks
+          </span>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <button class="btn sm" ${paged.page <= 1 ? 'disabled style="opacity:0.5;pointer-events:none;"' : ''} data-taskpage="${paged.page - 1}">
+              <i class="ti ti-chevron-left"></i> Previous
+            </button>
+            <span style="font-weight:600;padding:0 8px;">Page ${paged.page} of ${paged.totalPages}</span>
+            <button class="btn sm" ${paged.page >= paged.totalPages ? 'disabled style="opacity:0.5;pointer-events:none;"' : ''} data-taskpage="${paged.page + 1}">
+              Next <i class="ti ti-chevron-right"></i>
+            </button>
+          </div>
+        </div>
+      ` : ''}
+    `;
+  } catch(err) {
+    const container = $("#tasksTableContainer");
+    if (container) {
+      container.innerHTML = `<div style="text-align:center;padding:24px;color:var(--c-dn);">${esc(err.message)}</div>`;
+    }
+  }
 }
 
-/* ---------- Task Detail View ---------- */
-async function renderDetail(t){
-  const current = tasks.find(x => x.id === t.id) || t;
+/* ---------- Task Detail View (With Runs Pagination) ---------- */
+let detailRunsPage = 1;
+const detailRunsPageSize = 10;
+
+async function renderDetail(t, page = 1){
+  detailRunsPage = page;
+  const taskId = typeof t === "string" ? t : (t.id || t.taskId);
+  const current = tasks.find(x => (x.id || x.taskId) === taskId) || (typeof t === "object" ? t : { id: taskId, taskId: taskId });
   const v = $("#dynamicContainer");
 
-  let runs = [];
+  let pagedRuns = { items: [], page: 1, pageSize: 10, totalCount: 0, totalPages: 1 };
+  let taskEntity = current;
+
   try {
-    const res = await fetch("/Dashboard/GetTaskDetail?id=" + encodeURIComponent(current.id));
+    const res = await fetch(`/Dashboard/GetTaskDetail?id=${encodeURIComponent(taskId)}&page=${page}&pageSize=${detailRunsPageSize}`);
     if (res.ok) {
       const data = await res.json();
-      if (data.runs && data.runs.length) {
-        runs = data.runs;
-      }
+      if (data.task) taskEntity = data.task;
+      if (data.pagedRuns) pagedRuns = data.pagedRuns;
     }
   } catch(e) {
     console.warn("Could not load runs from DB", e);
   }
 
+  const taskName = taskEntity.taskName || taskEntity.name || taskEntity.targetWebsite || "Task";
+  const website = taskEntity.targetWebsite || taskEntity.website || "";
+  const keyword = taskEntity.targetKeyword || taskEntity.keyword || "";
+  const locationName = taskEntity.targetLocation || taskEntity.location || "";
+  const totalRuns = pagedRuns.totalCount || 0;
+  const runs = pagedRuns.items || [];
+
   v.innerHTML = `
     <div style="font-size:13px;color:var(--c-muted);margin-bottom:12px;">
-      <a href="#tasks" style="color:var(--c-accent);text-decoration:none;">Tasks</a> / ${esc(current.name)}
+      <a href="#tasks" style="color:var(--c-accent);text-decoration:none;">Tasks</a> / ${esc(taskName)}
     </div>
 
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px;flex-wrap:wrap">
       <div>
-        <h1 style="font-size:24px;font-weight:700;margin:0;">${esc(current.name)}</h1>
+        <h1 style="font-size:24px;font-weight:700;margin:0;">${esc(taskName)}</h1>
         <div class="c-lbl" style="margin-top:4px;display:flex;gap:16px;flex-wrap:wrap;">
-          <span>Website: <b>${esc(current.website)}</b></span>
-          <span>Keyword: <b>${esc(current.keyword)}</b></span>
-          <span>Location: <b>${esc(current.location)}</b></span>
+          <span>Website: <b>${esc(website)}</b></span>
+          <span>Keyword: <b>${esc(keyword)}</b></span>
+          <span>Location: <b>${esc(locationName)}</b></span>
         </div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn" data-edit="${current.id}"><i class="ti ti-edit"></i> Edit</button>
-        <button class="btn danger" data-del="${current.id}"><i class="ti ti-trash"></i> Delete</button>
-        <button class="btn primary" data-run="${current.id}"><i class="ti ti-player-play"></i> Run Live SERP</button>
+        <button class="btn primary" onclick="location.hash='taskchart-${taskId}'"><i class="ti ti-chart-line"></i> View Report Graph</button>
+        <button class="btn" data-edit="${taskId}"><i class="ti ti-edit"></i> Edit</button>
+        <button class="btn danger" data-del="${taskId}"><i class="ti ti-trash"></i> Delete</button>
+        <button class="btn primary" data-run="${taskId}"><i class="ti ti-player-play"></i> Run Live SERP</button>
       </div>
     </div>
 
     <div class="c-card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <h3 style="font-size:16px;margin:0;font-weight:600;">Execution Runs (${runs.length})</h3>
+        <h3 style="font-size:16px;margin:0;font-weight:600;">Execution Runs (${totalRuns})</h3>
         <p class="c-lbl">Click any run to view SERP competitors and AI gap analysis</p>
       </div>
       <div class="tbl-wrap">
@@ -1131,7 +1193,7 @@ async function renderDetail(t){
           <tbody>
             ${runs.length ? runs.map((r, idx) => `
               <tr style="cursor:pointer;" onclick="location.hash='report-${r.runId}'">
-                <td><b>Run #${runs.length - idx}</b></td>
+                <td><b>Run #${r.runNumber > 0 ? r.runNumber : ((page - 1) * detailRunsPageSize + idx + 1)}</b></td>
                 <td style="color:var(--c-sub);">${fmtDT(r.startedAt || r.createdAt)}</td>
                 <td><span class="pill ${r.visibilityScore >= 50 ? 'up' : 'flat'}">${r.visibilityScore}%</span></td>
                 <td><b>${fmtRank(r.averageRank)}</b></td>
@@ -1144,6 +1206,24 @@ async function renderDetail(t){
           </tbody>
         </table>
       </div>
+
+      <!-- Runs Pagination Footer -->
+      ${pagedRuns.totalPages > 1 ? `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 8px 4px;border-top:1px solid var(--line);margin-top:8px;font-size:12.5px;">
+          <span class="c-lbl">
+            Showing ${(pagedRuns.page - 1) * pagedRuns.pageSize + 1}–${Math.min(pagedRuns.page * pagedRuns.pageSize, pagedRuns.totalCount)} of ${pagedRuns.totalCount} runs
+          </span>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <button class="btn sm" ${pagedRuns.page <= 1 ? 'disabled style="opacity:0.5;pointer-events:none;"' : ''} data-runpage="${pagedRuns.page - 1}" data-runtask="${taskId}">
+              <i class="ti ti-chevron-left"></i> Previous
+            </button>
+            <span style="font-weight:600;padding:0 8px;">Page ${pagedRuns.page} of ${pagedRuns.totalPages}</span>
+            <button class="btn sm" ${pagedRuns.page >= pagedRuns.totalPages ? 'disabled style="opacity:0.5;pointer-events:none;"' : ''} data-runpage="${pagedRuns.page + 1}" data-runtask="${taskId}">
+              Next <i class="ti ti-chevron-right"></i>
+            </button>
+          </div>
+        </div>
+      ` : ''}
     </div>
   `;
 }
@@ -1284,13 +1364,233 @@ async function renderReport(runId){
   }
 }
 
+/* ---------- Task Chart View (Runs vs Ranks Graph - up to 50 runs) ---------- */
+let activeTaskChart = null;
+
+async function renderTaskChartReport(taskId){
+  const v = $("#dynamicContainer");
+  if(activeTaskChart) { activeTaskChart.destroy(); activeTaskChart = null; }
+
+  v.innerHTML = `
+    <div style="font-size:13px;color:var(--c-muted);margin-bottom:12px;">
+      <a href="#tasks" style="color:var(--c-accent);text-decoration:none;">Tasks</a> / Task Report Graph
+    </div>
+    <div class="c-card" style="text-align:center;padding:40px;">
+      <span class="spin" style="margin-right:8px"></span> Loading task ranking history...
+    </div>
+  `;
+
+  try {
+    const res = await fetch("/Dashboard/GetTaskChartData?id=" + encodeURIComponent(taskId));
+    if (!res.ok) throw new Error("Failed to load task chart data.");
+    const data = await res.json();
+
+    const taskColor = (tasks.find(x => x.id === taskId)?.color) || 'var(--c-accent)';
+    const dark = document.documentElement.dataset.theme === "dark" || matchMedia('(prefers-color-scheme: dark)').matches;
+    const gridColor = dark ? '#2c3853' : '#d9dfe8';
+    const mutedColor = dark ? '#7c889d' : '#7a8699';
+
+    const runsCount = (data.ranks || []).length;
+    const rankedRanks = (data.ranks || []).filter(r => r !== null && r !== undefined);
+    const bestRank = rankedRanks.length ? Math.min(...rankedRanks) : null;
+    const latestRank = rankedRanks.length ? rankedRanks[rankedRanks.length - 1] : null;
+    const avgRankVal = rankedRanks.length ? (rankedRanks.reduce((a,b)=>a+b,0) / rankedRanks.length).toFixed(1) : null;
+
+    v.innerHTML = `
+      <div style="font-size:13px;color:var(--c-muted);margin-bottom:12px;">
+        <a href="#tasks" style="color:var(--c-accent);text-decoration:none;">Tasks</a> / 
+        <a href="#task-${taskId}" style="color:var(--c-accent);text-decoration:none;">${esc(data.taskName)}</a> / 
+        Historical Performance
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+        <div>
+          <h1 style="font-size:24px;font-weight:700;margin:0;display:flex;align-items:center;gap:8px;">
+            <i class="ti ti-chart-dots" style="color:var(--c-accent)"></i> ${esc(data.taskName)} – Ranking History
+          </h1>
+          <div class="c-lbl" style="margin-top:4px;display:flex;gap:16px;flex-wrap:wrap;">
+            <span>Website: <b>${esc(data.website)}</b></span>
+            <span>Keyword: <b>${esc(data.keyword)}</b></span>
+            <span>Location: <b>${esc(data.location)}</b></span>
+            <span>Data Points: <b>${runsCount} of 50 runs</b></span>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn" onclick="location.hash='task-${taskId}'"><i class="ti ti-arrow-left"></i> Task Details</button>
+          <button class="btn primary" data-run="${taskId}"><i class="ti ti-player-play"></i> Run Live SERP</button>
+        </div>
+      </div>
+
+      <!-- Quick KPI strip for this task -->
+      <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px;">
+        <div class="c-card">
+          <p class="c-lbl">Latest rank</p>
+          <p class="c-num" style="color:var(--c-accent)">${latestRank ? '#' + latestRank : '–'}</p>
+        </div>
+        <div class="c-card">
+          <p class="c-lbl">Best rank achieved</p>
+          <p class="c-num" style="color:var(--c-up)">${bestRank ? '#' + bestRank : '–'}</p>
+        </div>
+        <div class="c-card">
+          <p class="c-lbl">Historical average</p>
+          <p class="c-num">${avgRankVal ? '#' + avgRankVal : '–'}</p>
+        </div>
+        <div class="c-card">
+          <p class="c-lbl">Tracked runs</p>
+          <p class="c-num">${runsCount}</p>
+        </div>
+      </div>
+
+      <!-- Main Runs vs Rank Chart (Up to 50 runs) -->
+      <div class="c-card" style="margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <div>
+            <h3 style="font-size:16px;margin:0;font-weight:600;">Runs vs. Ranks Trend</h3>
+            <p class="c-lbl" style="margin-top:2px;">Showing up to the last 50 runs · Hover over any point/node to see exact rank</p>
+          </div>
+          <span class="pill" style="background:var(--c-accent-bg);color:var(--c-accent);">Lower is Better (Rank #1 Top)</span>
+        </div>
+        <div style="position:relative;height:340px;">
+          <canvas id="taskSpecificChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Runs Details List for this Task -->
+      <div class="c-card">
+        <h3 style="font-size:15px;margin:0 0 10px;font-weight:600;">Runs Data Table</h3>
+        <div class="tbl-wrap" style="margin:0;padding:0;overflow-x:auto;">
+          <table class="tbl-custom" style="width:100%;border-collapse:collapse;">
+            <thead>
+              <tr>
+                <th style="width:15%">Run</th>
+                <th style="width:25%">Executed At</th>
+                <th style="width:15%">Rank</th>
+                <th style="width:20%">Visibility Score</th>
+                <th style="text-align:right">Report</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(data.runs || []).map((r, i) => `
+                <tr style="cursor:pointer;" onclick="location.hash='report-${r.runId}'">
+                  <td><b>Run #${r.runNumber > 0 ? r.runNumber : (i + 1)}</b></td>
+                  <td style="color:var(--c-sub);">${fmtDT(r.startedAt)}</td>
+                  <td><b>${r.averageRank ? '#' + (Math.round(r.averageRank*10)/10) : '–'}</b></td>
+                  <td><span class="pill ${r.visibilityScore >= 50 ? 'up' : 'flat'}">${r.visibilityScore}%</span></td>
+                  <td style="text-align:right" onclick="event.stopPropagation()">
+                    <button class="btn sm" onclick="location.hash='report-${r.runId}'">Open Report</button>
+                  </td>
+                </tr>
+              `).reverse().join("") || `<tr><td colspan="5" class="c-lbl" style="text-align:center;padding:20px;">No runs recorded yet.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    // Initialize Chart.js
+    const canvas = $("#taskSpecificChart");
+    if(canvas && runsCount > 0) {
+      activeTaskChart = new Chart(canvas, {
+        type: 'line',
+        data: {
+          labels: data.labels,
+          datasets: [{
+            label: data.taskName,
+            data: data.ranks,
+            borderColor: taskColor,
+            backgroundColor: taskColor,
+            borderWidth: 2.5,
+            pointRadius: 4,
+            pointHoverRadius: 7,
+            pointBackgroundColor: taskColor,
+            pointHoverBackgroundColor: '#ffffff',
+            pointHoverBorderColor: taskColor,
+            pointHoverBorderWidth: 2,
+            tension: 0.25,
+            spanGaps: false
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            mode: 'index',
+            intersect: false
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: dark ? '#1f2a41' : '#ffffff',
+              titleColor: dark ? '#ffffff' : '#172033',
+              bodyColor: dark ? '#ffffff' : '#172033',
+              borderColor: dark ? '#2c3853' : '#d9dfe8',
+              borderWidth: 1,
+              padding: 10,
+              displayColors: false,
+              callbacks: {
+                title: items => items[0].label,
+                label: context => {
+                  const val = context.parsed.y;
+                  if (val === null || val === undefined) return ' Unranked';
+                  return ` Rank: #${val}`;
+                },
+                afterLabel: context => {
+                  const idx = context.dataIndex;
+                  const dateStr = data.dates && data.dates[idx] ? fmtDT(data.dates[idx]) : '';
+                  return dateStr ? ` Date: ${dateStr}` : '';
+                }
+              }
+            }
+          },
+          scales: {
+            y: {
+              reverse: true,
+              min: 1,
+              ticks: {
+                color: mutedColor,
+                font: { size: 12 },
+                stepSize: 5,
+                callback: v => '#' + v
+              },
+              grid: { color: gridColor },
+              border: { display: false }
+            },
+            x: {
+              ticks: {
+                color: mutedColor,
+                font: { size: 11 },
+                maxRotation: 45,
+                autoSkip: true,
+                maxTicksLimit: 20
+              },
+              grid: { display: false }
+            }
+          }
+        }
+      });
+    }
+  } catch(err) {
+    v.innerHTML = `
+      <div class="c-card" style="padding:24px;text-align:center;">
+        <p style="color:var(--c-dn);font-weight:600;">Error: ${esc(err.message)}</p>
+        <button class="btn" onclick="location.hash='tasks'">Back to Tasks</button>
+      </div>
+    `;
+  }
+}
+
 /* ---------- SPA Routing ---------- */
 function route(){
   const h = location.hash.slice(1) || "dashboard";
-  const deep = h.startsWith("task-") || h.startsWith("report-");
+  const deep = h.startsWith("task-") || h.startsWith("report-") || h.startsWith("taskchart-");
   $("#nav").innerHTML = navHTML(deep ? "tasks" : h);
   $("#navM").innerHTML = navHTML(deep ? "tasks" : h);
 
+  if(h.startsWith("taskchart-")){
+    const taskId = h.slice(10);
+    window.scrollTo(0,0);
+    return renderTaskChartReport(taskId);
+  }
   if(h.startsWith("report-")){
     const runId = h.slice(7);
     window.scrollTo(0,0);
@@ -1298,10 +1598,8 @@ function route(){
   }
   if(h.startsWith("task-")){
     const taskId = h.slice(5);
-    const t = tasks.find(x => x.id === taskId);
-    if(t) return renderDetail(t);
-    location.hash = "tasks";
-    return;
+    window.scrollTo(0,0);
+    return renderDetail(taskId);
   }
   if(h === "tasks") return renderTasks();
   renderDashboard();
@@ -1426,6 +1724,27 @@ document.addEventListener("click", e => {
     e.stopPropagation();
     const rId = sa.dataset.runid;
     if(rId) startAnalyzingRag(rId);
+    return;
+  }
+
+  const runPageBtn = e.target.closest("[data-runpage]");
+  if(runPageBtn) {
+    e.stopPropagation();
+    const targetPage = parseInt(runPageBtn.dataset.runpage, 10);
+    const targetTaskId = runPageBtn.dataset.runtask;
+    if(!isNaN(targetPage) && targetTaskId) {
+      renderDetail(targetTaskId, targetPage);
+    }
+    return;
+  }
+
+  const taskPageBtn = e.target.closest("[data-taskpage]");
+  if(taskPageBtn) {
+    e.stopPropagation();
+    const targetPage = parseInt(taskPageBtn.dataset.taskpage, 10);
+    if(!isNaN(targetPage)) {
+      renderTasks(targetPage);
+    }
     return;
   }
 });

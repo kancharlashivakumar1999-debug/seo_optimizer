@@ -25,14 +25,70 @@ public static class SqlQueries
             t.created_by AS CreatedBy,
             t.updated_by AS UpdatedBy,
             COUNT(r.run_id)::int AS TotalRuns,
-            (SELECT r2.average_rank FROM task_runs r2 WHERE r2.task_id = t.task_id AND r2.is_active = TRUE ORDER BY r2.started_at DESC LIMIT 1) AS LatestAverageRank,
-            (SELECT r3.average_rank FROM task_runs r3 WHERE r3.task_id = t.task_id AND r3.is_active = TRUE ORDER BY r3.started_at DESC OFFSET 1 LIMIT 1) AS PreviousAverageRank,
-            (SELECT r4.started_at FROM task_runs r4 WHERE r4.task_id = t.task_id AND r4.is_active = TRUE ORDER BY r4.started_at DESC LIMIT 1) AS LastRunAt
+            (SELECT r2.average_rank FROM task_runs r2 WHERE r2.task_id = t.task_id AND r2.is_active = TRUE ORDER BY r2.created_at DESC LIMIT 1) AS LatestAverageRank,
+            (SELECT r3.average_rank FROM task_runs r3 WHERE r3.task_id = t.task_id AND r3.is_active = TRUE ORDER BY r3.created_at DESC OFFSET 1 LIMIT 1) AS PreviousAverageRank,
+            (SELECT r4.started_at FROM task_runs r4 WHERE r4.task_id = t.task_id AND r4.is_active = TRUE ORDER BY r4.created_at DESC LIMIT 1) AS LastRunAt
         FROM audit_tasks t
         LEFT JOIN task_runs r ON r.task_id = t.task_id AND r.is_active = TRUE
         WHERE t.is_active = TRUE
         GROUP BY t.task_id, t.task_name, t.target_website, t.target_keyword, t.target_location, t.target_keywords, t.target_locations, t.prompt_template, t.check_engine, t.repeats_per_run, t.status, t.created_at, t.updated_at, t.created_by, t.updated_by
         ORDER BY t.created_at DESC;";
+
+    public const string GetTasksPaged = @"
+        SELECT 
+            t.task_id AS TaskId,
+            t.task_name AS TaskName,
+            t.target_website AS TargetWebsite,
+            COALESCE(t.target_keyword, '') AS TargetKeyword,
+            COALESCE(t.target_location, '') AS TargetLocation,
+            t.target_keywords::text AS TargetKeywordsJson,
+            t.target_locations::text AS TargetLocationsJson,
+            t.prompt_template AS PromptTemplate,
+            t.check_engine AS CheckEngine,
+            t.repeats_per_run AS RepeatsPerRun,
+            t.status AS Status,
+            t.created_at AS CreatedAt,
+            t.updated_at AS UpdatedAt,
+            t.created_by AS CreatedBy,
+            t.updated_by AS UpdatedBy,
+            COUNT(r.run_id)::int AS TotalRuns,
+            (SELECT r2.average_rank FROM task_runs r2 WHERE r2.task_id = t.task_id AND r2.is_active = TRUE ORDER BY r2.created_at DESC LIMIT 1) AS LatestAverageRank,
+            (SELECT r3.average_rank FROM task_runs r3 WHERE r3.task_id = t.task_id AND r3.is_active = TRUE ORDER BY r3.created_at DESC OFFSET 1 LIMIT 1) AS PreviousAverageRank,
+            (SELECT r4.started_at FROM task_runs r4 WHERE r4.task_id = t.task_id AND r4.is_active = TRUE ORDER BY r4.created_at DESC LIMIT 1) AS LastRunAt
+        FROM audit_tasks t
+        LEFT JOIN task_runs r ON r.task_id = t.task_id AND r.is_active = TRUE
+        WHERE t.is_active = TRUE
+        GROUP BY t.task_id, t.task_name, t.target_website, t.target_keyword, t.target_location, t.target_keywords, t.target_locations, t.prompt_template, t.check_engine, t.repeats_per_run, t.status, t.created_at, t.updated_at, t.created_by, t.updated_by
+        ORDER BY t.created_at DESC
+        OFFSET @Offset LIMIT @Limit;
+
+        SELECT COUNT(*) FROM audit_tasks WHERE is_active = TRUE;";
+
+    public const string GetRunsByTaskIdPaged = @"
+        SELECT 
+            r.run_id AS RunId,
+            r.task_id AS TaskId,
+            r.run_number AS RunNumber,
+            r.run_status AS RunStatus,
+            r.run_note AS RunNote,
+            r.implemented_changes::text AS ImplementedChangesJson,
+            r.visibility_score AS VisibilityScore,
+            r.average_rank AS AverageRank,
+            r.total_keywords_checked AS TotalKeywordsChecked,
+            r.top10_hits AS Top10Hits,
+            r.summary AS Summary,
+            r.duration_seconds AS DurationSeconds,
+            r.started_at AS StartedAt,
+            r.finished_at AS FinishedAt,
+            r.created_at AS CreatedAt,
+            CASE WHEN g.result_id IS NOT NULL THEN TRUE ELSE FALSE END AS HasGapAnalysis
+        FROM task_runs r
+        LEFT JOIN gap_analysis_results g ON g.run_id = r.run_id
+        WHERE r.task_id = @TaskId AND r.is_active = TRUE
+        ORDER BY r.created_at ASC
+        OFFSET @Offset LIMIT @Limit;
+
+        SELECT COUNT(*) FROM task_runs WHERE task_id = @TaskId AND is_active = TRUE;";
 
     public const string GetTaskByIdProjected = @"
         SELECT 
@@ -137,6 +193,31 @@ public static class SqlQueries
         LEFT JOIN gap_analysis_results g ON g.run_id = r.run_id
         WHERE r.task_id = @TaskId AND r.is_active = TRUE
         ORDER BY r.started_at DESC;";
+
+    public const string GetTaskChartRuns = @"
+        SELECT 
+            run_id AS RunId,
+            task_id AS TaskId,
+            run_number AS RunNumber,
+            run_status AS RunStatus,
+            visibility_score AS VisibilityScore,
+            average_rank AS AverageRank,
+            created_at AS StartedAt
+        FROM (
+            SELECT 
+                r.run_id,
+                r.task_id,
+                r.run_number,
+                r.run_status,
+                r.visibility_score,
+                r.average_rank,
+                r.created_at
+            FROM task_runs r
+            WHERE r.task_id = @TaskId AND r.is_active = TRUE
+            ORDER BY r.created_at DESC
+            LIMIT 50
+        ) sub
+        ORDER BY created_at ASC;";
 
     // --- SERP Competitors (Linked by run_id) ---
     public const string InsertCompetitors = @"
