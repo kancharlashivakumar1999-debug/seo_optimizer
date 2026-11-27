@@ -768,6 +768,7 @@ public class DashboardController : Controller
     [HttpPost]
     public async Task<IActionResult> SaveRun([FromBody] JsonElement runPayload, CancellationToken ct)
     {
+        await Task.CompletedTask;
         return Ok(new { success = true });
     }
 }
