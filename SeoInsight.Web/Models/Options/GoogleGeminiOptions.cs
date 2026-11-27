@@ -9,7 +9,6 @@ public sealed class GoogleGeminiOptions
 {
     public const string SectionName = "GoogleGemini";
 
-    [Required]
     public string ApiKey { get; set; } = string.Empty;
 
     public string ChatModel { get; set; } = "gemini-3.5-flash-lite";
