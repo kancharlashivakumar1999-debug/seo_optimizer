@@ -35,7 +35,7 @@ public sealed class SerpOptions
     [Range(1, 100)]
     public int ResultsDepth { get; set; } = 10;
 
-    [Range(5, 120)]
+    [Range(5, 300)]
     public int TimeoutSeconds { get; set; } = 30;
 
     [Range(0, 5)]
